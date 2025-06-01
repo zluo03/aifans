@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户搜索测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .search-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .suggestion-item {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        .suggestion-item:hover {
+            background-color: #f5f5f5;
+        }
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+        .nickname {
+            font-weight: bold;
+            color: #333;
+        }
+        .username {
+            font-size: 12px;
+            color: #666;
+        }
+        .debug {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>用户搜索功能测试</h1>
+    
+    <div class="search-container">
+        <label for="creator-input">创作者搜索：</label>
+        <input 
+            type="text" 
+            id="creator-input" 
+            placeholder="输入用户昵称进行搜索"
+            autocomplete="off"
+        >
+        <div id="suggestions" class="suggestions" style="display: none;"></div>
+    </div>
+    
+    <div>
+        <strong>选中的用户：</strong>
+        <span id="selected-user">无</span>
+    </div>
+    
+    <div id="debug" class="debug">等待输入...</div>
+
+    <script>
+        const input = document.getElementById('creator-input');
+        const suggestionsContainer = document.getElementById('suggestions');
+        const selectedUserSpan = document.getElementById('selected-user');
+        const debugDiv = document.getElementById('debug');
+        
+        let debounceTimer;
+        
+        function debounce(func, wait) {
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(debounceTimer);
+                    func(...args);
+                };
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(later, wait);
+            };
+        }
+        
+        async function searchUsers(query) {
+            debugDiv.textContent = `搜索中: "${query}"`;
+            
+            if (query.length < 1) {
+                hideSuggestions();
+                debugDiv.textContent = '查询为空，隐藏建议';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`http://localhost:3000/api/users/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                debugDiv.textContent = `搜索结果: ${JSON.stringify(data, null, 2)}`;
+                
+                if (data.users && data.users.length > 0) {
+                    showSuggestions(data.users);
+                } else {
+                    hideSuggestions();
+                }
+            } catch (error) {
+                debugDiv.textContent = `搜索错误: ${error.message}`;
+                hideSuggestions();
+            }
+        }
+        
+        function showSuggestions(users) {
+            suggestionsContainer.innerHTML = '';
+            
+            users.forEach(user => {
+                const item = document.createElement('div');
+                item.className = 'suggestion-item';
+                item.innerHTML = `
+                    <div class="nickname">${user.nickname}</div>
+                    <div class="username">@${user.username}</div>
+                `;
+                item.onclick = () => selectUser(user);
+                suggestionsContainer.appendChild(item);
+            });
+            
+            suggestionsContainer.style.display = 'block';
+        }
+        
+        function hideSuggestions() {
+            suggestionsContainer.style.display = 'none';
+        }
+        
+        function selectUser(user) {
+            input.value = user.nickname;
+            selectedUserSpan.textContent = `${user.nickname} (@${user.username})`;
+            hideSuggestions();
+            debugDiv.textContent = `选择了用户: ${JSON.stringify(user, null, 2)}`;
+        }
+        
+        const debouncedSearch = debounce(searchUsers, 300);
+        
+        input.addEventListener('input', (e) => {
+            const value = e.target.value;
+            debugDiv.textContent = `输入变化: "${value}"`;
+            debouncedSearch(value);
+        });
+        
+        input.addEventListener('focus', () => {
+            if (input.value.length > 0) {
+                debouncedSearch(input.value);
+            }
+        });
+        
+        input.addEventListener('blur', () => {
+            // 延迟隐藏，让用户有时间点击
+            setTimeout(() => {
+                hideSuggestions();
+            }, 200);
+        });
+        
+        // 防止点击建议时输入框失焦
+        suggestionsContainer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+        });
+    </script>
+</body>
+</html> 

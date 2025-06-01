@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>详细资源访问调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid;
+        }
+        .success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+        .warning { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .step {
+            background-color: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 详细资源访问调试</h1>
+    
+    <div>
+        <button onclick="runFullTest()">运行完整测试</button>
+        <button onclick="testSpecificResource()">测试指定资源</button>
+        <button onclick="clearResults()">清除结果</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = message;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function runFullTest() {
+            clearResults();
+            
+            addResult('<div class="step">步骤 1: 检查认证状态</div>', 'info');
+            const authResult = await checkAuth();
+            
+            if (!authResult.success) {
+                addResult('❌ 认证检查失败，停止测试', 'error');
+                return;
+            }
+            
+            addResult('<div class="step">步骤 2: 测试资源列表API</div>', 'info');
+            const listResult = await testResourceList();
+            
+            if (!listResult.success) {
+                addResult('❌ 资源列表测试失败，停止测试', 'error');
+                return;
+            }
+            
+            addResult('<div class="step">步骤 3: 测试资源详情API</div>', 'info');
+            const detailResult = await testResourceDetail(listResult.resourceId);
+            
+            if (detailResult.success) {
+                addResult('🎉 所有测试通过！', 'success');
+            } else {
+                addResult('❌ 资源详情测试失败', 'error');
+            }
+        }
+
+        async function checkAuth() {
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('❌ 未找到认证存储', 'error');
+                    return { success: false };
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                if (!state.user) {
+                    addResult('❌ 用户数据不存在', 'error');
+                    return { success: false };
+                }
+
+                const user = state.user;
+                const token = state.token;
+                
+                addResult(`✅ 认证检查通过<br>
+                    用户ID: ${user.id}<br>
+                    角色: <strong>${user.role}</strong><br>
+                    昵称: ${user.nickname}<br>
+                    认证状态: ${state.isAuthenticated ? '已认证' : '未认证'}<br>
+                    Token: ${token ? token.substring(0, 20) + '...' : '无'}`, 'success');
+                
+                if (user.role === 'LIFETIME') {
+                    addResult('🎉 确认：用户是终身会员，应该有访问权限', 'success');
+                } else if (user.role === 'NORMAL') {
+                    addResult('⚠️ 用户是普通用户，无法访问资源详情', 'warning');
+                    return { success: false };
+                }
+                
+                return { success: true, user, token };
+            } catch (error) {
+                addResult(`❌ 检查认证失败: ${error.message}`, 'error');
+                return { success: false };
+            }
+        }
+
+        async function testResourceList() {
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                addResult('🔄 正在测试资源列表API...', 'info');
+                
+                const response = await fetch('/api/resources?limit=3', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                addResult(`<div class="code-block">资源列表API响应:
+状态码: ${response.status}
+状态文本: ${response.statusText}
+Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}</div>`, 'info');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ 资源列表API成功<br>
+                        返回资源数量: ${data.resources?.length || 0}<br>
+                        总数: ${data.total || 0}`, 'success');
+                    
+                    if (data.resources && data.resources.length > 0) {
+                        const firstResource = data.resources[0];
+                        addResult(`📄 第一个资源信息:<br>
+                            ID: ${firstResource.id}<br>
+                            标题: ${firstResource.title}<br>
+                            分类: ${firstResource.category?.name}`, 'info');
+                        
+                        return { success: true, resourceId: firstResource.id };
+                    } else {
+                        addResult('⚠️ 没有找到任何资源', 'warning');
+                        return { success: false };
+                    }
+                } else {
+                    const errorText = await response.text();
+                    addResult(`❌ 资源列表API失败: ${response.status}<br>
+                        错误: ${errorText}`, 'error');
+                    return { success: false };
+                }
+            } catch (error) {
+                addResult(`❌ 测试资源列表失败: ${error.message}`, 'error');
+                return { success: false };
+            }
+        }
+
+        async function testResourceDetail(resourceId) {
+            try {
+                if (!resourceId) {
+                    resourceId = prompt('请输入资源ID:') || '1';
+                }
+                
+                const authStorage = localStorage.getItem('auth-storage');
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                addResult(`🔄 正在测试资源详情API (ID: ${resourceId})...`, 'info');
+                
+                const response = await fetch(`/api/resources/${resourceId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                addResult(`<div class="code-block">资源详情API响应:
+状态码: ${response.status}
+状态文本: ${response.statusText}
+Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}</div>`, 'info');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ 资源详情API成功<br>
+                        标题: ${data.title}<br>
+                        分类: ${data.category?.name}<br>
+                        作者: ${data.user?.nickname}<br>
+                        创建时间: ${new Date(data.createdAt).toLocaleString()}`, 'success');
+                    
+                    addResult(`<div class="code-block">完整响应数据:
+${JSON.stringify(data, null, 2)}</div>`, 'info');
+                    
+                    return { success: true };
+                } else {
+                    let errorText;
+                    let errorData;
+                    
+                    try {
+                        errorText = await response.text();
+                        if (errorText) {
+                            try {
+                                errorData = JSON.parse(errorText);
+                            } catch (e) {
+                                // 不是JSON格式
+                            }
+                        }
+                    } catch (e) {
+                        errorText = '无法读取响应内容';
+                    }
+                    
+                    addResult(`❌ 资源详情API失败: ${response.status}<br>
+                        错误文本: ${errorText || '空响应'}<br>
+                        错误数据: ${errorData ? JSON.stringify(errorData, null, 2) : '无'}`, 'error');
+                    
+                    addResult(`<div class="code-block">详细错误信息:
+响应状态: ${response.status} ${response.statusText}
+响应内容: ${errorText}
+响应长度: ${errorText ? errorText.length : 0} 字符</div>`, 'error');
+                    
+                    return { success: false };
+                }
+            } catch (error) {
+                addResult(`❌ 测试资源详情失败: ${error.message}<br>
+                    错误堆栈: ${error.stack}`, 'error');
+                return { success: false };
+            }
+        }
+
+        async function testSpecificResource() {
+            const resourceId = prompt('请输入要测试的资源ID:');
+            if (resourceId) {
+                clearResults();
+                addResult('<div class="step">测试指定资源</div>', 'info');
+                await checkAuth();
+                await testResourceDetail(resourceId);
+            }
+        }
+
+        // 页面加载时自动检查认证状态
+        window.addEventListener('load', () => {
+            checkAuth();
+        });
+    </script>
+</body>
+</html> 

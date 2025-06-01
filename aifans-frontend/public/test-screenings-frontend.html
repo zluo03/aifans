@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试影院API</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <h1>影院API测试</h1>
+    
+    <button onclick="testBackendAPI()">测试后端API</button>
+    <button onclick="testFrontendAPI()">测试前端API</button>
+    <button onclick="testDatabaseData()">查看数据库数据</button>
+    
+    <div id="results"></div>
+
+    <script>
+        function addResult(title, content, isError = false) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${isError ? 'error' : 'success'}`;
+            div.innerHTML = `<h3>${title}</h3><pre>${content}</pre>`;
+            results.appendChild(div);
+        }
+
+        async function testBackendAPI() {
+            try {
+                addResult('后端API测试', '正在测试...');
+                
+                // 直接调用后端API（需要认证，预期会失败）
+                const response = await fetch('http://localhost:3001/api/admin/screenings');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addResult('后端API测试 - 成功', JSON.stringify(data, null, 2));
+                } else {
+                    addResult('后端API测试 - 失败（预期）', JSON.stringify(data, null, 2), true);
+                }
+            } catch (error) {
+                addResult('后端API测试 - 错误', error.message, true);
+            }
+        }
+
+        async function testFrontendAPI() {
+            try {
+                addResult('前端API测试', '正在测试...');
+                
+                // 调用前端API路由
+                const response = await fetch('/api/admin/screenings');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addResult('前端API测试 - 成功', JSON.stringify(data, null, 2));
+                } else {
+                    addResult('前端API测试 - 失败', JSON.stringify(data, null, 2), true);
+                }
+            } catch (error) {
+                addResult('前端API测试 - 错误', error.message, true);
+            }
+        }
+
+        async function testDatabaseData() {
+            addResult('数据库数据', `
+根据之前的测试，数据库中有以下数据：
+
+1. fdsfas (ID: 4)
+   上传者: 系统管理员
+   创作者: 第25帧
+   创建时间: Tue May 27 2025 03:21:10 GMT+0800
+
+2. fff (ID: 1)
+   上传者: 系统管理员
+   创作者: 未指定
+   创建时间: Tue May 27 2025 03:11:32 GMT+0800
+
+数据确实存在于数据库中，问题在于前端页面的数据获取或显示。
+            `);
+        }
+
+        // 页面加载时自动运行测试
+        window.onload = function() {
+            testDatabaseData();
+        };
+    </script>
+</body>
+</html> 

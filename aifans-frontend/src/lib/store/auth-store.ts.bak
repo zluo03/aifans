@@ -1,0 +1,256 @@
+'use client';
+
+import { create } from 'zustand';
+import axios from 'axios';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+// API基础URL
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/';
+console.log('API_URL设置为:', baseUrl);
+
+// 用户类型定义
+interface User {
+  id: number;
+  username: string;
+  nickname: string;
+  email: string;
+  role: 'NORMAL' | 'PREMIUM' | 'LIFETIME' | 'ADMIN';
+  avatarUrl?: string;
+  premiumExpiryDate?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// 认证状态
+interface AuthState {
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作
+  login: (credentials: { login: string; password: string }) => Promise<void>;
+  register: (userData: { username: string; nickname: string; email: string; password: string }) => Promise<void>;
+  logout: () => void;
+  loadUserFromToken: () => Promise<void>;
+  clearError: () => void;
+}
+
+// 创建认证状态存储
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      
+      // 用户登录
+      login: async (credentials) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          const response = await axios.post(`${baseUrl}auth/login`, credentials);
+          const { user, token } = response.data;
+          
+          if (!token || !user) {
+            throw new Error('登录响应数据不完整');
+          }
+          
+          // 存储用户和token
+          set({ 
+            user, 
+            token, 
+            isAuthenticated: true, 
+            isLoading: false,
+            error: null
+          });
+          
+          // 设置API的认证头
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          // 触发事件通知其他组件
+          window.dispatchEvent(new Event('auth-state-changed'));
+        } catch (error: any) {
+          console.error('登录失败:', error);
+          set({ 
+            isLoading: false,
+            isAuthenticated: false,
+            user: null,
+            token: null,
+            error: error.response?.data?.message || '登录失败，请检查用户名/邮箱和密码' 
+          });
+          throw error;
+        }
+      },
+      
+      // 用户注册
+      register: async (userData) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          const response = await axios.post(`${baseUrl}auth/register`, userData);
+          const { user, token } = response.data;
+          
+          if (!token || !user) {
+            throw new Error('注册响应数据不完整');
+          }
+          
+          // 存储用户和token
+          set({ 
+            user, 
+            token, 
+            isAuthenticated: true, 
+            isLoading: false,
+            error: null
+          });
+          
+          // 设置API的认证头
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          // 触发事件通知其他组件
+          window.dispatchEvent(new Event('auth-state-changed'));
+        } catch (error: any) {
+          console.error('注册失败:', error);
+          set({ 
+            isLoading: false,
+            isAuthenticated: false,
+            user: null,
+            token: null,
+            error: error.response?.data?.message || '注册失败，请稍后再试' 
+          });
+          throw error;
+        }
+      },
+      
+      // 用户登出
+      logout: () => {
+        // 清除认证头
+        delete axios.defaults.headers.common['Authorization'];
+        
+        // 清除状态
+        set({ 
+          user: null, 
+          token: null, 
+          isAuthenticated: false,
+          error: null
+        });
+        
+        // 触发事件通知其他组件
+        window.dispatchEvent(new Event('auth-state-changed'));
+      },
+      
+      // 从token加载用户
+      loadUserFromToken: async () => {
+        const { token } = get();
+        if (!token) {
+          set({ isAuthenticated: false, user: null });
+          return;
+        }
+        
+        try {
+          set({ isLoading: true });
+          
+          // 设置认证头
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          // 获取用户资料
+          const response = await axios.get(`${baseUrl}auth/profile`);
+          set({ 
+            user: response.data, 
+            isAuthenticated: true,
+            isLoading: false,
+            error: null
+          });
+          
+          // 触发事件通知其他组件
+          window.dispatchEvent(new Event('auth-state-changed'));
+        } catch (error: any) {
+          console.error('加载用户资料失败:', error);
+          // Token无效，清除状态
+          get().logout();
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+      
+      // 清除错误
+      clearError: () => set({ error: null })
+    }),
+    {
+      name: 'auth-storage',
+      storage: createJSONStorage(() => ({
+        getItem: (name: string) => {
+          try {
+            if (typeof window === 'undefined') return null;
+            const value = localStorage.getItem(name);
+            if (!value) return null;
+            
+            // 同步到sessionStorage
+            sessionStorage.setItem(name, value);
+            
+            // 同步到cookie，用于服务端认证
+            document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=2592000`; // 30天过期
+            
+            return value;
+          } catch (error) {
+            console.error('读取认证状态失败:', error);
+            return null;
+          }
+        },
+        setItem: (name: string, value: string) => {
+          try {
+            if (typeof window === 'undefined') return;
+            
+            // 保存到localStorage
+            localStorage.setItem(name, value);
+            
+            // 同步到sessionStorage
+            sessionStorage.setItem(name, value);
+            
+            // 同步到cookie，用于服务端认证
+            document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=2592000`; // 30天过期
+          } catch (error) {
+            console.error('保存认证状态失败:', error);
+          }
+        },
+        removeItem: (name: string) => {
+          try {
+            if (typeof window === 'undefined') return;
+            
+            // 清除localStorage
+            localStorage.removeItem(name);
+            
+            // 清除sessionStorage
+            sessionStorage.removeItem(name);
+            
+            // 清除cookie
+            document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          } catch (error) {
+            console.error('清除认证状态失败:', error);
+          }
+        }
+      })),
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated
+      }),
+      // 确保在页面加载时立即恢复状态
+      skipHydration: false,
+    }
+  )
+);
+
+// 导出一个辅助函数来检查认证状态
+export const checkAuthState = () => {
+  const state = useAuthStore.getState();
+  return {
+    isAuthenticated: state.isAuthenticated,
+    user: state.user,
+    token: state.token
+  };
+}; 

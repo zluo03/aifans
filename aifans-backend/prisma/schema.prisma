@@ -1,0 +1,660 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+  relationMode = "foreignKeys"
+}
+
+model User {
+  id                Int               @id @default(autoincrement())
+  username          String?         @unique
+  nickname          String?
+  email             String?         @unique
+  password          String?
+  role              users_role        @default(NORMAL)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  status            users_status      @default(ACTIVE)
+  avatarUrl         String?
+  premiumExpiryDate DateTime?
+  comments          Comment[]
+  favorites         Favorite[]
+  likes             Like[]
+  notes             Note[]
+  resources         Resource[]
+  paymentOrders     PaymentOrder[]
+  posts             Post[]
+  requestResponses  RequestResponse[]
+  requests          Request[]
+  adminScreenings   Screening[] @relation("ScreeningAdminUploader")
+  createdScreenings Screening[] @relation("ScreeningCreator")
+  // 灵贴相关关系
+  spiritPosts      SpiritPost[]
+  spiritPostClaims SpiritPostClaim[]
+  sentSpiritMessages     SpiritPostMessage[] @relation("SpiritPostMessageSender")
+  receivedSpiritMessages SpiritPostMessage[] @relation("SpiritPostMessageReceiver")
+  creator   Creator?
+  dailyLogins UserDailyLogin[]
+  announcementViews AnnouncementView[]
+  usedRedemptionCodes RedemptionCode[]
+
+  // 新增微信相关字段
+  wechatOpenId    String?  @unique
+  wechatUnionId   String?  @unique
+  wechatNickname  String?
+  wechatAvatar    String?
+  isWechatUser    Boolean  @default(false)
+  tempOpenId      String?  @unique  // 添加临时openId字段
+
+  @@index([role])
+  @@index([status])
+  @@index([nickname])
+  @@index([createdAt])
+  @@index([email, username], map: "idx_user_login")
+  @@map("users")
+}
+
+model AIPlatform {
+  id      Int            @id @default(autoincrement())
+  name    String
+  logoUrl String?
+  type    AIPlatformType
+  status  String         @default("ACTIVE")
+  posts   Post[]
+  models  AIModel[]
+
+  @@unique([name, type])
+  @@map("ai_platforms")
+}
+
+model AIModel {
+  id           Int        @id @default(autoincrement())
+  name         String
+  aiPlatformId Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  aiPlatform   AIPlatform @relation(fields: [aiPlatformId], references: [id], onDelete: Cascade)
+
+  @@unique([name, aiPlatformId])
+  @@index([aiPlatformId])
+  @@map("ai_models")
+}
+
+model SensitiveWord {
+  id   Int    @id @default(autoincrement())
+  word String @unique
+
+  @@map("sensitive_words")
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  used      Boolean  @default(false)
+
+  @@index([email])
+  @@map("password_resets")
+}
+
+model Post {
+  id               Int                @id @default(autoincrement())
+  userId           Int
+  type             PostType
+  title            String?
+  fileUrl          String
+  thumbnailUrl     String?
+  originalFilename String?
+  mimeType         String?
+  size             Int?
+  aiPlatformId     Int
+  modelUsed        String?
+  prompt           String?          @db.Text
+  description      String?          @db.Text
+  tags             Json?            @default("[]")
+  videoCategory    String?
+  allowDownload    Boolean          @default(true)
+  likesCount       Int              @default(0)
+  favoritesCount   Int              @default(0)
+  viewsCount       Int              @default(0)
+  status           PostStatus       @default(VISIBLE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  aiPlatform       AIPlatform        @relation(fields: [aiPlatformId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id])
+
+  @@index([aiPlatformId], map: "posts_aiPlatformId_fkey")
+  @@index([userId], map: "posts_userId_fkey")
+  @@index([type, status, createdAt])
+  @@index([type, status, likesCount])
+  @@index([type, status, viewsCount])
+  @@map("posts")
+}
+
+model Like {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  entityType EntityType
+  entityId   Int
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@unique([userId, entityType, entityId])
+  @@index([entityId])
+  @@index([entityType, entityId], name: "entity_index")
+  @@map("likes")
+}
+
+model Favorite {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  entityType EntityType
+  entityId   Int
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@unique([userId, entityType, entityId])
+  @@index([entityId])
+  @@map("favorites")
+}
+
+model NoteCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  notes       Note[]
+
+  @@map("note_categories")
+}
+
+model ResourceCategory {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  resources   Resource[]
+
+  @@map("resource_categories")
+}
+
+model Note {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  title          String
+  content        Json
+  coverImageUrl  String?
+  categoryId     Int
+  likesCount     Int          @default(0)
+  favoritesCount Int          @default(0)
+  viewsCount     Int          @default(0)
+  status         NoteStatus   @default(VISIBLE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  category       NoteCategory @relation(fields: [categoryId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@index([categoryId], map: "notes_categoryId_fkey")
+  @@index([userId], map: "notes_userId_fkey")
+  @@index([status, createdAt])
+  @@index([status, likesCount])
+  @@index([status, viewsCount])
+  @@map("notes")
+}
+
+model Resource {
+  id             Int            @id @default(autoincrement())
+  userId         Int
+  title          String
+  content        Json
+  coverImageUrl  String?
+  categoryId     Int
+  likesCount     Int            @default(0)
+  favoritesCount Int            @default(0)
+  viewsCount     Int            @default(0)
+  status         ResourceStatus @default(VISIBLE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  category       ResourceCategory @relation(fields: [categoryId], references: [id])
+  user           User           @relation(fields: [userId], references: [id])
+
+  @@index([categoryId], map: "resources_categoryId_fkey")
+  @@index([userId], map: "resources_userId_fkey")
+  @@index([status, createdAt])
+  @@index([status, likesCount])
+  @@index([status, viewsCount])
+  @@map("resources")
+}
+
+model Screening {
+  id              Int        @id @default(autoincrement())
+  adminUploaderId Int
+  creatorId       Int?       // 真正的创作者ID，可选
+  title           String
+  videoUrl        String
+  thumbnailUrl    String?
+  description     String?    @db.Text
+  likesCount      Int        @default(0)
+  viewsCount      Int        @default(0)
+  createdAt       DateTime   @default(now())
+  adminUploader   User       @relation("ScreeningAdminUploader", fields: [adminUploaderId], references: [id])
+  creator         User?      @relation("ScreeningCreator", fields: [creatorId], references: [id])
+
+  @@index([adminUploaderId], map: "screenings_adminUploaderId_fkey")
+  @@index([creatorId], map: "screenings_creatorId_fkey")
+  @@map("screenings")
+}
+
+model Comment {
+  id         Int           @id @default(autoincrement())
+  userId     Int
+  entityType EntityType
+  entityId   Int
+  content    String        @db.Text
+  status     CommentStatus @default(VISIBLE)
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityId])
+  @@index([status])
+  @@map("comments")
+}
+
+model RequestCategory {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  requests Request[]
+
+  @@map("request_categories")
+}
+
+model Request {
+  id             Int               @id @default(autoincrement())
+  userId         Int
+  title          String
+  content        String            @db.Text
+  categoryId     Int
+  priority       RequestPriority   @default(NORMAL)
+  budget         Float?
+  status         RequestStatus     @default(OPEN)
+  likesCount     Int               @default(0)
+  favoritesCount Int               @default(0)
+  viewsCount     Int               @default(0)
+  responseCount  Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  responses      RequestResponse[]
+  category       RequestCategory   @relation(fields: [categoryId], references: [id])
+  user           User              @relation(fields: [userId], references: [id])
+
+  @@index([categoryId], map: "requests_categoryId_fkey")
+  @@index([userId], map: "requests_userId_fkey")
+  @@index([status, priority, createdAt])
+  @@index([status, responseCount])
+  @@index([status, budget])
+  @@map("requests")
+}
+
+model RequestResponse {
+  id        Int            @id @default(autoincrement())
+  requestId Int
+  userId    Int
+  content   String         @db.Text
+  price     Float?
+  status    ResponseStatus @default(PENDING)
+  isPublic  Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  request   Request        @relation(fields: [requestId], references: [id])
+  user      User           @relation(fields: [userId], references: [id])
+
+  @@index([requestId], map: "request_responses_requestId_fkey")
+  @@index([userId], map: "request_responses_userId_fkey")
+  @@map("request_responses")
+}
+
+model MembershipProduct {
+  id           Int            @id @default(autoincrement())
+  title        String
+  description  String?
+  price        Decimal        @db.Decimal(10, 2)
+  durationDays Int            @map("duration_days")
+  type         String
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  orders       PaymentOrder[]
+
+  @@map("membership_products")
+}
+
+model PaymentOrder {
+  id            Int               @id @default(autoincrement())
+  userId        Int               @map("user_id")
+  productId     Int               @map("product_id")
+  amount        Decimal           @db.Decimal(10, 2)
+  status        String
+  alipayTradeNo String?           @map("alipay_trade_no")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  product       MembershipProduct @relation(fields: [productId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "payment_orders_userId_fkey")
+  @@index([productId], map: "payment_orders_productId_fkey")
+  @@map("payment_orders")
+}
+
+model MailSettings {
+  id        Int      @id @default(autoincrement())
+  host      String
+  port      Int      @default(465)
+  secure    Boolean  @default(true)
+  user      String
+  password  String
+  from      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("mail_settings")
+}
+
+enum AIPlatformType {
+  IMAGE
+  VIDEO
+}
+
+enum PostType {
+  IMAGE
+  VIDEO
+}
+
+enum PostStatus {
+  VISIBLE
+  HIDDEN
+  ADMIN_DELETED
+}
+
+enum PostVideoCategory {
+  IMAGE_TO_VIDEO
+  TEXT_TO_VIDEO
+  FRAME_INTERPOLATION
+  MULTI_IMAGE_REF
+}
+
+enum EntityType {
+  POST
+  NOTE
+  SCREENING
+  REQUEST
+  RESOURCE
+}
+
+enum NoteStatus {
+  VISIBLE
+  HIDDEN_BY_ADMIN
+  ADMIN_DELETED
+}
+
+enum CommentStatus {
+  VISIBLE
+  HIDDEN
+  DELETED
+}
+
+enum RequestStatus {
+  OPEN
+  IN_PROGRESS
+  SOLVED
+  CLOSED
+  HIDDEN
+}
+
+enum RequestPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ResponseStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum users_role {
+  NORMAL
+  PREMIUM
+  LIFETIME
+  ADMIN
+}
+
+enum users_status {
+  ACTIVE
+  MUTED
+  BANNED
+}
+
+// 灵贴模型
+model SpiritPost {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  title       String   @db.VarChar(200)
+  content     String   @db.Text
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // 关系
+  user        User     @relation(fields: [userId], references: [id])
+  claims      SpiritPostClaim[]
+  messages    SpiritPostMessage[]
+  
+  @@index([userId])
+  @@index([isHidden])
+  @@index([createdAt])
+}
+
+// 灵贴认领记录
+model SpiritPostClaim {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  userId      Int
+  isCompleted Boolean  @default(false) // 是否已被发布者标记为已认领
+  createdAt   DateTime @default(now())
+  
+  // 关系
+  post        SpiritPost @relation(fields: [postId], references: [id])
+  user        User       @relation(fields: [userId], references: [id])
+  
+  @@unique([postId, userId]) // 一个用户只能认领一次
+  @@index([postId])
+  @@index([userId])
+}
+
+// 灵贴消息（对话）
+model SpiritPostMessage {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  senderId    Int
+  receiverId  Int
+  content     String   @db.Text
+  isRead      Boolean  @default(false) // 是否已读
+  readAt      DateTime? // 已读时间
+  createdAt   DateTime @default(now())
+  
+  // 关系
+  post        SpiritPost @relation(fields: [postId], references: [id])
+  sender      User       @relation("SpiritPostMessageSender", fields: [senderId], references: [id])
+  receiver    User       @relation("SpiritPostMessageReceiver", fields: [receiverId], references: [id])
+  
+  @@index([postId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+  @@index([isRead])
+  @@index([receiverId, isRead])
+}
+
+model UploadLimit {
+  id             Int      @id @default(autoincrement())
+  module         String   @unique // 如 'creator', 'post', 'note', 'spirit-post'
+  imageMaxSizeMB Int      @default(5)
+  videoMaxSizeMB Int      @default(50)
+  audioMaxSizeMB Int      @default(50)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
+model Creator {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @unique
+  avatarUrl     String?
+  nickname      String
+  bio           String?
+  expertise     String?
+  backgroundUrl String?
+  images        Json?
+  videos        Json?
+  audios        Json?
+  score         Int      @default(0)
+  user          User     @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([score])
+}
+
+// 用户每日登录记录表
+model UserDailyLogin {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  loginDate DateTime @db.Date
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, loginDate])
+  @@index([userId])
+  @@index([loginDate])
+}
+
+enum ResourceStatus {
+  VISIBLE
+  HIDDEN
+  DELETED
+}
+
+// 公告模型
+model Announcement {
+  id          Int      @id @default(autoincrement())
+  title       String   @db.VarChar(200)
+  content     Json     // BlockNote编辑器内容
+  imageUrl    String?  // 公告图片
+  summary     String?  @db.Text // 内容简介
+  linkUrl     String?  // 链接地址
+  showImage   Boolean  @default(true)  // 是否显示图片
+  showSummary Boolean  @default(true)  // 是否显示简介
+  showLink    Boolean  @default(false) // 是否显示链接
+  startDate   DateTime // 生效日期
+  endDate     DateTime // 结束日期
+  isActive    Boolean  @default(true)  // 是否启用
+  priority    Int      @default(0)     // 优先级，数字越大优先级越高
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // 用户查看记录
+  viewRecords AnnouncementView[]
+  
+  @@index([isActive, startDate, endDate])
+  @@index([priority])
+  @@map("announcements")
+}
+
+// 用户公告查看记录
+model AnnouncementView {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  announcementId Int
+  viewDate       DateTime     @db.Date // 查看日期（只记录日期，不记录时间）
+  createdAt      DateTime     @default(now())
+  
+  user           User         @relation(fields: [userId], references: [id])
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, announcementId, viewDate]) // 每个用户每天每个公告只记录一次
+  @@index([userId, viewDate])
+  @@map("announcement_views")
+}
+
+// 社交媒体模型
+model SocialMedia {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  logoUrl     String   // logo图片URL
+  qrCodeUrl   String   // 二维码图片URL
+  sortOrder   Int      @default(0) // 排序顺序
+  isActive    Boolean  @default(true) // 是否启用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("social_media")
+}
+
+// 兑换码模型
+model RedemptionCode {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique @db.VarChar(16)
+  durationDays Int       @map("duration_days")
+  isUsed       Boolean   @default(false) @map("is_used")
+  usedByUserId Int?      @map("used_by_user_id")
+  usedAt       DateTime? @map("used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime? @map("expires_at")
+  
+  // 关系
+  usedByUser   User?     @relation(fields: [usedByUserId], references: [id])
+  
+  @@index([usedByUserId])
+  @@index([isUsed])
+  @@index([createdAt])
+  @@map("redemption_codes")
+}
+
+// 支付设置模型
+model PaymentSettings {
+  id               Int      @id @default(autoincrement())
+  alipayAppId      String?  @map("alipay_app_id")
+  alipayPrivateKey String?  @map("alipay_private_key") @db.Text
+  alipayPublicKey  String?  @map("alipay_public_key") @db.Text
+  alipayGatewayUrl String?  @default("https://openapi.alipay.com/gateway.do") @map("alipay_gateway_url")
+  isSandbox        Boolean  @default(true) @map("is_sandbox")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  
+  @@map("payment_settings")
+}
+
+// 微信验证码模型
+model WechatVerificationCode {
+  id        Int      @id @default(autoincrement())
+  code      String
+  openId    String
+  used      Boolean  @default(false)
+  expiredAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([code])
+  @@index([openId])
+  @@map("wechat_verification_codes")
+}

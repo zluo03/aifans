@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookie认证测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-good { color: #28a745; background-color: #d4edda; }
+        .status-error { color: #721c24; background-color: #f8d7da; }
+        .status-info { color: #0c5460; background-color: #d1ecf1; }
+        .status-box {
+            padding: 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border: 1px solid;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🍪 Cookie认证测试</h1>
+    
+    <div class="test-section">
+        <h2>📊 当前认证状态</h2>
+        <button onclick="checkAuthState()">检查认证状态</button>
+        <div id="auth-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🧪 测试管理员API</h2>
+        <button onclick="testWithCredentials()">测试带Cookie的请求</button>
+        <button onclick="testWithoutCredentials()">测试不带Cookie的请求</button>
+        <div id="test-results"></div>
+    </div>
+
+    <script>
+        function addResult(containerId, content, type = 'info') {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `status-box status-${type}`;
+            resultDiv.innerHTML = content;
+            container.appendChild(resultDiv);
+        }
+
+        function checkAuthState() {
+            const container = document.getElementById('auth-status');
+            container.innerHTML = '';
+            
+            // 检查localStorage中的认证信息
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('auth-status', '❌ 未找到认证存储', 'error');
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                const statusHtml = `
+                    <strong>认证状态详情:</strong><br>
+                    用户ID: ${state.user?.id || 'N/A'}<br>
+                    用户名: ${state.user?.username || 'N/A'}<br>
+                    角色: ${state.user?.role || 'N/A'}<br>
+                    Token: ${state.token ? '存在' : '不存在'}<br>
+                    认证状态: ${state.isAuthenticated ? '已认证' : '未认证'}
+                `;
+                
+                addResult('auth-status', statusHtml, 'info');
+                
+                // 检查cookie
+                addResult('auth-status', `<strong>Cookie信息:</strong><br>${document.cookie || '无cookie'}`, 'info');
+                
+            } catch (error) {
+                addResult('auth-status', `❌ 解析认证状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testWithCredentials() {
+            const container = document.getElementById('test-results');
+            container.innerHTML = '';
+            
+            addResult('test-results', '🔄 测试带Cookie的请求...', 'info');
+            
+            try {
+                // 测试获取用户列表
+                const response = await fetch('/api/admin/users?limit=1', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include' // 关键：包含cookie
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('test-results', `✅ 请求成功！获取到 ${data.items?.length || 0} 个用户`, 'good');
+                    
+                    // 如果有用户，测试角色更新
+                    if (data.items && data.items.length > 0) {
+                        const testUser = data.items.find(u => u.role !== 'ADMIN');
+                        if (testUser) {
+                            addResult('test-results', `测试更新用户角色: ${testUser.username}`, 'info');
+                            
+                            const updateResponse = await fetch(`/api/admin/users/${testUser.id}/role`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                credentials: 'include', // 关键：包含cookie
+                                body: JSON.stringify({ role: testUser.role })
+                            });
+                            
+                            if (updateResponse.ok) {
+                                addResult('test-results', '✅ 角色更新API调用成功！', 'good');
+                            } else {
+                                addResult('test-results', `❌ 角色更新失败: ${updateResponse.status} ${updateResponse.statusText}`, 'error');
+                            }
+                        }
+                    }
+                } else {
+                    addResult('test-results', `❌ 请求失败: ${response.status} ${response.statusText}`, 'error');
+                    const errorData = await response.json();
+                    addResult('test-results', `错误详情: ${errorData.message}`, 'error');
+                }
+            } catch (error) {
+                addResult('test-results', `❌ 请求异常: ${error.message}`, 'error');
+            }
+        }
+
+        async function testWithoutCredentials() {
+            const container = document.getElementById('test-results');
+            container.innerHTML = '';
+            
+            addResult('test-results', '🔄 测试不带Cookie的请求...', 'info');
+            
+            try {
+                // 测试获取用户列表（不带credentials）
+                const response = await fetch('/api/admin/users?limit=1', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                    // 注意：没有 credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('test-results', `⚠️ 请求成功？这不应该发生！获取到 ${data.items?.length || 0} 个用户`, 'error');
+                } else {
+                    addResult('test-results', `✅ 预期的失败: ${response.status} ${response.statusText}`, 'good');
+                    const errorData = await response.json();
+                    addResult('test-results', `错误详情: ${errorData.message}`, 'info');
+                }
+            } catch (error) {
+                addResult('test-results', `❌ 请求异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动检查认证状态
+        window.addEventListener('load', () => {
+            checkAuthState();
+        });
+    </script>
+</body>
+</html> 

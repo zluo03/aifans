@@ -1,0 +1,463 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  
+  /* 新的主题颜色方案 */
+  --custom-primary: #50a2ff;      /* 主色：蓝色 */
+  --custom-secondary: #fb64b6;    /* 辅助色1：粉色 */
+  --custom-accent: #c27aff;       /* 中间色：紫色 */
+  --custom-background: #ffffff;   /* 白色背景 */
+  --custom-card: #ffffff;         /* 卡片背景 */
+  --custom-text: #1f2937;         /* 深灰色文字 */
+  --custom-text-muted: #6b7280;   /* 浅灰色文字 */
+  
+  /* Shadcn UI变量 */
+  --background: var(--custom-background);
+  --foreground: var(--custom-text);
+  --card: var(--custom-card);
+  --card-foreground: var(--custom-text);
+  --popover: var(--custom-card);
+  --popover-foreground: var(--custom-text);
+  --primary: var(--custom-primary);
+  --primary-foreground: #ffffff; /* 主色上的文字 */
+  --secondary: var(--custom-secondary);
+  --secondary-foreground: #ffffff; /* 辅助色上的文字 */
+  --muted: #f9fafb; /* 浅灰色背景 */
+  --muted-foreground: var(--custom-text-muted);
+  --accent: #f3f4f6; /* 浅灰色强调 */
+  --accent-foreground: var(--custom-text);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb; /* 浅灰色边框 */
+  --input: #f9fafb;
+  --ring: var(--custom-primary);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    overflow-y: hidden; /* 防止浏览器窗口出现滚动条 */
+    height: 100vh; /* 使body占满整个视口高度 */
+  }
+  /* 恢复主内容区域滚动样式 */
+  main {
+    overflow: hidden;
+    max-height: calc(100vh - 168px); /* 导航栏112px + 页脚56px = 168px */
+    height: calc(100vh - 168px); /* 确保固定高度 */
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* 新的颜色工具类 */
+@layer utilities {
+  /* 主色渐变 */
+  .bg-primary-gradient {
+    background: linear-gradient(135deg, var(--custom-primary), var(--custom-accent));
+  }
+  
+  /* 辅助色渐变 */
+  .bg-secondary-gradient {
+    background: linear-gradient(135deg, var(--custom-secondary), var(--custom-accent));
+  }
+  
+  /* 三色渐变 */
+  .bg-rainbow-gradient {
+    background: linear-gradient(135deg, var(--custom-primary), var(--custom-accent), var(--custom-secondary));
+  }
+  
+  /* 按钮渐变样式 */
+  .btn-primary {
+    background: linear-gradient(135deg, var(--custom-primary), var(--custom-accent));
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #4094e6, #b366f0);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px rgba(80, 162, 255, 0.3);
+  }
+  
+  .btn-secondary {
+    background: linear-gradient(135deg, var(--custom-secondary), var(--custom-accent));
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-secondary:hover {
+    background: linear-gradient(135deg, #f555a8, #b366f0);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px rgba(251, 100, 182, 0.3);
+  }
+  
+  /* 文字渐变 */
+  .text-primary-gradient {
+    background: linear-gradient(135deg, var(--custom-primary), var(--custom-accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  
+  .text-secondary-gradient {
+    background: linear-gradient(135deg, var(--custom-secondary), var(--custom-accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  
+  /* 边框渐变 */
+  .border-primary-gradient {
+    border: 2px solid transparent;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(135deg, var(--custom-primary), var(--custom-accent)) border-box;
+  }
+}
+
+/* 弹框和对话框样式 */
+.dialog-content,
+.popover-content,
+.sheet-content {
+  @apply bg-card text-card-foreground border-border shadow-md backdrop-blur-sm;
+}
+
+
+
+/* 导航栏图标样式 */
+.nav-icon {
+  @apply w-4 h-4 mr-1;
+}
+
+/* 单色图标样式 */
+.icon-simple {
+  @apply stroke-current fill-none;
+}
+
+/* 弹幕动画 */
+@keyframes danmaku {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+.animate-danmaku {
+  animation: danmaku 15s linear forwards;
+}
+
+.text-shadow {
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* 内容区域滚动条样式 - 隐藏滚动条 */
+.content-scrollbar {
+  /* Firefox */
+  scrollbar-width: none;
+  /* IE and Edge */
+  -ms-overflow-style: none;
+  
+  /* Chrome, Edge, Safari */
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+    background: transparent;
+  }
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+.hide-scrollbar {
+  /* Chrome, Safari, Edge and Opera */
+  &::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
+  
+  /* IE and Edge */
+  -ms-overflow-style: none !important;
+  
+  /* Firefox */
+  scrollbar-width: none !important;
+}
+
+/* 影院页面专用滚动条隐藏 */
+.scrollbar-hide {
+  /* Chrome, Safari, Edge and Opera */
+  &::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+  
+  /* IE and Edge */
+  -ms-overflow-style: none;
+  
+  /* Firefox */
+  scrollbar-width: none;
+}
+
+/* 全局隐藏所有滚动条 */
+* {
+  /* Chrome, Safari, Edge and Opera */
+  &::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+    background: transparent !important;
+  }
+}
+
+/* 针对body和html的滚动条隐藏 */
+html, body {
+  /* Chrome, Safari, Edge and Opera */
+  &::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+    background: transparent !important;
+  }
+  
+  /* IE and Edge */
+  -ms-overflow-style: none !important;
+  
+  /* Firefox */
+  scrollbar-width: none !important;
+}
+
+/* 瀑布流布局（纵向滚动） */
+.vertical-masonry {
+  display: flex;
+  flex-direction: row;
+  gap: 16px; /* 列之间的间距 */
+  width: 100%; /* 填充容器宽度 */
+  padding: 16px 16px 24px 16px; /* 确保底部有足够空间 */
+  height: auto; /* 高度自适应内容 */
+  box-sizing: border-box;
+  overflow-y: auto; /* 纵向滚动 */
+  overflow-x: hidden; /* 禁止横向滚动 */
+  /* 恢复高度限制以确保滚动发生在容器内 */
+  max-height: calc(100vh - 200px); /* 保持导航栏和页脚可见 */
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+.vertical-masonry {
+  /* Chrome, Safari, Edge and Opera */
+  &::-webkit-scrollbar {
+    width: 0;
+    background: transparent;
+  }
+  
+  /* Firefox */
+  scrollbar-width: none;
+  
+  /* IE and Edge */
+  -ms-overflow-style: none;
+}
+
+/* 瀑布流列容器 */
+.masonry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* 确保垂直间距与水平间距一致 */
+  width: calc(20% - 13px); /* 默认5列，考虑间距 */
+  justify-content: flex-start; /* 从顶部开始排列 */
+  min-height: 0; /* 允许列高度适应内容 */
+}
+
+/* 超大屏幕显示7列 */
+@media (min-width: 1921px) {
+  .masonry-column {
+    width: calc((100% - (16px * 6)) / 7); /* 7列，减去6个间隙的宽度 */
+  }
+}
+
+/* 大屏幕显示6列 */
+@media (min-width: 1601px) and (max-width: 1920px) {
+  .masonry-column {
+    width: calc((100% - (16px * 5)) / 6); /* 6列，减去5个间隙的宽度 */
+  }
+}
+
+/* 中大屏幕显示5列 */
+@media (min-width: 1401px) and (max-width: 1600px) {
+  .masonry-column {
+    width: calc((100% - (16px * 4)) / 5); /* 5列，减去4个间隙的宽度 */
+  }
+}
+
+/* 中等屏幕显示4列 */
+@media (min-width: 1201px) and (max-width: 1400px) {
+  .masonry-column {
+    width: calc((100% - (16px * 3)) / 4); /* 4列，减去3个间隙的宽度 */
+  }
+}
+
+/* 小屏幕显示3列 */
+@media (min-width: 769px) and (max-width: 1200px) {
+  .masonry-column {
+    width: calc((100% - (16px * 2)) / 3); /* 3列，减去2个间隙的宽度 */
+  }
+}
+
+/* 移动设备显示2列 */
+@media (max-width: 768px) {
+  .masonry-column {
+    width: calc((100% - 16px) / 2); /* 2列，减去1个间隙的宽度 */
+  }
+}
+
+/* 瀑布流子项目样式 */
+.masonry-item {
+  width: 100%;
+  box-sizing: border-box;
+  transform: translateZ(0); /* 强制GPU渲染，提高性能 */
+  position: relative; /* 确保定位上下文 */
+  display: block; /* 使用块级布局而非flex */
+  margin: 0; /* 移除所有margin */
+  padding: 0 0 4px 0; /* 添加底部padding确保圆角完全显示 */
+  overflow: visible; /* 确保内容不被裁剪 */
+}
+
+/* 删除水平滚动相关样式，因为我们不再需要它们 */
+.horizontal-scroll-area {
+  display: none;
+}
+
+/* 对宽格式媒体的处理 */
+.is-wide-media {
+  width: 100%; /* 保持与其他卡片相同宽度 */
+}
+
+/* 使鼠标滚轮可以控制横向滚动 */
+.horizontal-scroll-area {
+  overflow-y: hidden;
+  height: 100%;
+}
+
+/* 使鼠标滚轮可以控制横向滚动 */
+html {
+  overflow-x: hidden;
+}
+
+/* 全局隐藏视频下载按钮 */
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  overflow: hidden !important;
+}
+
+/* Firefox 隐藏下载按钮 */
+video::-moz-media-controls-download-button {
+  display: none !important;
+}
+
+/* 全屏状态下也隐藏下载按钮 */
+video:fullscreen::-webkit-media-controls-download-button,
+video:-webkit-full-screen::-webkit-media-controls-download-button,
+video:-moz-full-screen::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+/* Edge 浏览器 */
+video::-ms-media-controls-download-button {
+  display: none !important;
+}
+
+/* 全局禁用图片拖拽和选择 */
+img {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  pointer-events: auto;
+}
+
+/* 禁用视频和音频的右键菜单和拖拽 */
+video, audio {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* 增强媒体保护 */
+.media-protected {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  pointer-events: auto;
+}
+
+/* 浮动卡片效果 */
+.floating-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.floating-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}

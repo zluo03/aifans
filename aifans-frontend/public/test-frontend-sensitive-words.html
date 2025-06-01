@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>敏感词检测前端测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .error {
+            color: red;
+            background-color: #ffe6e6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background-color: #e6ffe6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>敏感词检测前端测试</h1>
+    
+    <div class="test-section">
+        <h2>测试1：模拟敏感词检测失败</h2>
+        <p>这个测试模拟后端返回400错误且包含敏感词信息的情况</p>
+        <button onclick="testSensitiveWordError()">测试敏感词检测失败</button>
+        <div id="test1-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试2：模拟普通400错误</h2>
+        <p>这个测试模拟后端返回400错误但不是敏感词问题的情况</p>
+        <button onclick="testNormalError()">测试普通400错误</button>
+        <div id="test2-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试3：模拟网络错误</h2>
+        <p>这个测试模拟网络连接失败的情况</p>
+        <button onclick="testNetworkError()">测试网络错误</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <script>
+        // 模拟上传作品模态框中的错误处理逻辑
+        function simulateUploadError(errorType) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (errorType === 'sensitive') {
+                        // 模拟敏感词检测失败的响应
+                        const error = new Error();
+                        error.response = {
+                            status: 400,
+                            data: {
+                                message: '内容包含敏感词：测试敏感词, 违禁内容'
+                            }
+                        };
+                        reject(error);
+                    } else if (errorType === 'normal') {
+                        // 模拟普通400错误
+                        const error = new Error();
+                        error.response = {
+                            status: 400,
+                            data: {
+                                message: '请求参数错误'
+                            }
+                        };
+                        reject(error);
+                    } else if (errorType === 'network') {
+                        // 模拟网络错误
+                        const error = new Error('Network Error');
+                        reject(error);
+                    }
+                }, 500);
+            });
+        }
+
+        // 模拟前端错误处理逻辑
+        async function handleUpload(errorType) {
+            try {
+                // 模拟第一次API调用失败
+                await simulateUploadError(errorType);
+            } catch (uploadErr) {
+                console.log('上传方法1失败:', uploadErr);
+                
+                // 检查是否是敏感词检测失败（400错误且包含敏感词信息）
+                if (uploadErr.response?.status === 400) {
+                    const errorMessage = uploadErr.response?.data?.message || '';
+                    if (errorMessage.includes('敏感词')) {
+                        throw new Error('您的内容违反了站点政策。');
+                    }
+                }
+                
+                // 如果不是敏感词错误，尝试第二种方法（这里简化处理）
+                throw uploadErr;
+            }
+        }
+
+        async function testSensitiveWordError() {
+            const resultDiv = document.getElementById('test1-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                await handleUpload('sensitive');
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：应该抛出敏感词错误</div>';
+            } catch (err) {
+                if (err.message === '您的内容违反了站点政策。') {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确显示敏感词错误信息</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 测试失败：错误信息不正确 - ${err.message}</div>`;
+                }
+            }
+        }
+
+        async function testNormalError() {
+            const resultDiv = document.getElementById('test2-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                await handleUpload('normal');
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：应该抛出错误</div>';
+            } catch (err) {
+                if (err.response?.data?.message === '请求参数错误') {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确处理普通400错误</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 测试失败：错误处理不正确 - ${err.message}</div>`;
+                }
+            }
+        }
+
+        async function testNetworkError() {
+            const resultDiv = document.getElementById('test3-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                await handleUpload('network');
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：应该抛出网络错误</div>';
+            } catch (err) {
+                if (err.message === 'Network Error') {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确处理网络错误</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 测试失败：错误处理不正确 - ${err.message}</div>`;
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

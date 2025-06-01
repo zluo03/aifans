@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单资源访问调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 简单资源访问调试</h1>
+    
+    <div>
+        <button onclick="checkAuth()">检查认证状态</button>
+        <button onclick="testResourceList()">测试资源列表</button>
+        <button onclick="testResourceDetail()">测试资源详情</button>
+        <button onclick="clearResults()">清除结果</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = message;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function checkAuth() {
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('❌ 未找到认证存储', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                if (state.user) {
+                    addResult(`✅ 用户已登录<br>
+                        角色: <strong>${state.user.role}</strong><br>
+                        昵称: ${state.user.nickname}<br>
+                        认证状态: ${state.isAuthenticated ? '已认证' : '未认证'}`, 'success');
+                    
+                    if (state.user.role === 'LIFETIME') {
+                        addResult('🎉 确认：用户是终身会员，应该有访问权限', 'success');
+                    } else if (state.user.role === 'NORMAL') {
+                        addResult('⚠️ 用户是普通用户，无法访问资源详情', 'warning');
+                    }
+                } else {
+                    addResult('❌ 用户数据不存在', 'error');
+                }
+            } catch (error) {
+                addResult(`❌ 检查认证失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testResourceList() {
+            try {
+                addResult('🔄 正在测试资源列表API...', 'info');
+                
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('❌ 无认证信息，无法测试', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                const response = await fetch('/api/resources?limit=3', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ 资源列表API成功<br>
+                        返回资源数量: ${data.resources?.length || 0}<br>
+                        总数: ${data.total || 0}`, 'success');
+                    
+                    if (data.resources && data.resources.length > 0) {
+                        const firstResource = data.resources[0];
+                        addResult(`📄 第一个资源信息:<br>
+                            ID: ${firstResource.id}<br>
+                            标题: ${firstResource.title}<br>
+                            分类: ${firstResource.category?.name}`, 'info');
+                        
+                        // 存储第一个资源ID供详情测试使用
+                        window.testResourceId = firstResource.id;
+                    }
+                } else {
+                    const errorText = await response.text();
+                    addResult(`❌ 资源列表API失败: ${response.status}<br>
+                        错误: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ 测试资源列表失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testResourceDetail() {
+            try {
+                const resourceId = window.testResourceId || prompt('请输入资源ID:') || '1';
+                addResult(`🔄 正在测试资源详情API (ID: ${resourceId})...`, 'info');
+                
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('❌ 无认证信息，无法测试', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                const response = await fetch(`/api/resources/${resourceId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ 资源详情API成功<br>
+                        标题: ${data.title}<br>
+                        分类: ${data.category?.name}<br>
+                        作者: ${data.user?.nickname}<br>
+                        创建时间: ${new Date(data.createdAt).toLocaleString()}`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    addResult(`❌ 资源详情API失败: ${response.status}<br>
+                        错误: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ 测试资源详情失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动检查认证状态
+        window.addEventListener('load', () => {
+            checkAuth();
+        });
+    </script>
+</body>
+</html> 

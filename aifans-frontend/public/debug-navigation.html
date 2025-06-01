@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导航调试工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-good { color: #28a745; background-color: #d4edda; }
+        .status-warning { color: #856404; background-color: #fff3cd; }
+        .status-error { color: #721c24; background-color: #f8d7da; }
+        .status-info { color: #0c5460; background-color: #d1ecf1; }
+        .status-box {
+            padding: 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border: 1px solid;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .navigation-test {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .navigation-test a {
+            background-color: #28a745;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .navigation-test a:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 导航调试工具</h1>
+    
+    <div class="test-section">
+        <h2>📊 当前认证状态</h2>
+        <button onclick="checkAuthState()">检查认证状态</button>
+        <div id="auth-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔗 导航测试</h2>
+        <p><strong>问题分析：</strong>我发现了一个关键问题！</p>
+        <div class="status-box status-warning">
+            <strong>发现的问题：</strong><br>
+            在资源列表页面的 handleResourceClick 函数中，使用了 <code>window.location.href</code> 进行页面跳转，
+            这会导致整个页面重新加载，而不是使用 Next.js 的客户端路由。
+            <br><br>
+            当页面重新加载时，React 组件的状态会重置，包括认证状态的加载过程。
+            这可能导致在认证状态完全加载之前，权限检查就被触发了。
+        </div>
+        
+        <div class="navigation-test">
+            <a href="/resources" target="_blank">资源列表 (新标签页)</a>
+            <a href="/resources/1" target="_blank">资源详情 ID:1 (新标签页)</a>
+            <a href="/resources/2" target="_blank">资源详情 ID:2 (新标签页)</a>
+        </div>
+        
+        <button onclick="testClientSideNavigation()">测试客户端导航</button>
+        <button onclick="testServerSideNavigation()">测试服务端导航</button>
+        <div id="navigation-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🧪 模拟点击测试</h2>
+        <button onclick="simulateResourceClick()">模拟资源卡片点击</button>
+        <div id="click-results"></div>
+    </div>
+
+    <script>
+        function addResult(containerId, content, type = 'info') {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `status-box status-${type}`;
+            resultDiv.innerHTML = content;
+            container.appendChild(resultDiv);
+        }
+
+        function checkAuthState() {
+            const container = document.getElementById('auth-status');
+            container.innerHTML = '';
+            
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('auth-status', '❌ 未找到认证存储', 'error');
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                const statusHtml = `
+                    <strong>认证状态详情:</strong><br>
+                    用户ID: ${state.user?.id || 'N/A'}<br>
+                    用户名: ${state.user?.username || 'N/A'}<br>
+                    昵称: ${state.user?.nickname || 'N/A'}<br>
+                    角色: ${state.user?.role || 'N/A'}<br>
+                    状态: ${state.user?.status || 'N/A'}<br>
+                    认证状态: ${state.isAuthenticated ? '是' : '否'}<br>
+                    Token长度: ${state.token ? state.token.length : 0}<br>
+                    加载状态: ${state.isLoading ? '加载中' : '已完成'}
+                `;
+                
+                addResult('auth-status', statusHtml, 'info');
+            } catch (error) {
+                addResult('auth-status', `❌ 解析认证状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        function testClientSideNavigation() {
+            const container = document.getElementById('navigation-results');
+            container.innerHTML = '';
+            
+            addResult('navigation-results', '🔄 测试客户端导航 (推荐方式)', 'info');
+            addResult('navigation-results', `
+                <strong>客户端导航的优势：</strong><br>
+                • 不会重新加载页面<br>
+                • 保持React状态<br>
+                • 认证状态不会重置<br>
+                • 更快的导航体验<br>
+                <br>
+                <strong>应该使用：</strong><br>
+                <code>router.push('/resources/1')</code><br>
+                而不是：<br>
+                <code>window.location.href = '/resources/1'</code>
+            `, 'good');
+        }
+
+        function testServerSideNavigation() {
+            const container = document.getElementById('navigation-results');
+            
+            addResult('navigation-results', '⚠️ 测试服务端导航 (当前使用的方式)', 'warning');
+            addResult('navigation-results', `
+                <strong>服务端导航的问题：</strong><br>
+                • 整个页面重新加载<br>
+                • React状态重置<br>
+                • 认证状态需要重新加载<br>
+                • 可能导致权限检查时序问题<br>
+                <br>
+                <strong>当前代码：</strong><br>
+                <code>window.location.href = '/resources/\${resourceId}'</code><br>
+                <br>
+                <strong>这就是问题所在！</strong>
+            `, 'error');
+        }
+
+        function simulateResourceClick() {
+            const container = document.getElementById('click-results');
+            container.innerHTML = '';
+            
+            // 模拟当前的点击逻辑
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('click-results', '❌ 未登录，无法访问', 'error');
+                return;
+            }
+
+            const parsed = JSON.parse(authStorage);
+            const user = (parsed.state || parsed).user;
+
+            if (!user) {
+                addResult('click-results', '❌ 用户对象不存在', 'error');
+                return;
+            }
+
+            if (user.role === 'NORMAL') {
+                addResult('click-results', '⚠️ 普通用户，应该显示升级提示', 'warning');
+                return;
+            }
+
+            addResult('click-results', `✅ 权限检查通过，用户角色: ${user.role}`, 'good');
+            addResult('click-results', `
+                <strong>模拟点击结果：</strong><br>
+                当前逻辑会执行：<code>window.location.href = '/resources/1'</code><br>
+                <br>
+                <strong>问题分析：</strong><br>
+                1. 页面会完全重新加载<br>
+                2. React组件重新初始化<br>
+                3. useAuthStore重新加载认证状态<br>
+                4. 在认证状态加载完成前，权限检查可能被触发<br>
+                5. 导致"请先登录"或权限不足的错误<br>
+                <br>
+                <strong>解决方案：</strong><br>
+                使用Next.js的router.push()进行客户端导航
+            `, 'warning');
+        }
+
+        // 页面加载时自动检查认证状态
+        window.addEventListener('load', () => {
+            checkAuthState();
+        });
+    </script>
+</body>
+</html> 

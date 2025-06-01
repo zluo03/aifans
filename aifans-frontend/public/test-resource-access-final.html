@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>资源访问问题最终调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .debug-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-good { color: #28a745; background-color: #d4edda; }
+        .status-warning { color: #856404; background-color: #fff3cd; }
+        .status-error { color: #721c24; background-color: #f8d7da; }
+        .status-info { color: #0c5460; background-color: #d1ecf1; }
+        .status-box {
+            padding: 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border: 1px solid;
+        }
+        .code-display {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .step-counter {
+            background-color: #007bff;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+        .test-result {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .console-log {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 资源访问问题最终调试工具</h1>
+    
+    <div class="debug-panel">
+        <h2>📋 问题诊断清单</h2>
+        <div class="status-box status-info">
+            <strong>问题描述：</strong>终身会员用户无法访问资源详情页面
+        </div>
+        <div class="status-box status-warning">
+            <strong>预期行为：</strong>LIFETIME角色用户应该能够正常访问资源详情
+        </div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>🔧 自动诊断</h2>
+        <button onclick="runFullDiagnosis()">开始完整诊断</button>
+        <button onclick="clearResults()">清除结果</button>
+        <div id="diagnosis-results"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>👤 用户状态检查</h2>
+        <button onclick="checkUserState()">检查用户状态</button>
+        <button onclick="checkAuthStorage()">检查认证存储</button>
+        <button onclick="testPermissionLogic()">测试权限逻辑</button>
+        <div id="user-state-results"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>🌐 API测试</h2>
+        <button onclick="testResourceListAPI()">测试资源列表API</button>
+        <button onclick="testResourceDetailAPI()">测试资源详情API</button>
+        <button onclick="testUserProfileAPI()">测试用户资料API</button>
+        <div id="api-test-results"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>🔄 实时监控</h2>
+        <button onclick="startRealTimeMonitoring()">开始实时监控</button>
+        <button onclick="stopRealTimeMonitoring()">停止监控</button>
+        <div id="monitoring-results"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>📝 控制台日志</h2>
+        <button onclick="clearConsoleLog()">清除日志</button>
+        <div id="console-log" class="console-log"></div>
+    </div>
+
+    <script>
+        let monitoringInterval = null;
+        let consoleLogBuffer = [];
+
+        // 重写console.log来捕获日志
+        const originalConsoleLog = console.log;
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            consoleLogBuffer.push(`[${timestamp}] ${message}`);
+            updateConsoleDisplay();
+        };
+
+        function updateConsoleDisplay() {
+            const consoleDiv = document.getElementById('console-log');
+            consoleDiv.innerHTML = consoleLogBuffer.slice(-50).join('\n');
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        function clearConsoleLog() {
+            consoleLogBuffer = [];
+            updateConsoleDisplay();
+        }
+
+        function addResult(containerId, content, type = 'info') {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result status-${type}`;
+            resultDiv.innerHTML = content;
+            container.appendChild(resultDiv);
+        }
+
+        function clearResults() {
+            const containers = ['diagnosis-results', 'user-state-results', 'api-test-results', 'monitoring-results'];
+            containers.forEach(id => {
+                document.getElementById(id).innerHTML = '';
+            });
+        }
+
+        async function runFullDiagnosis() {
+            console.log('=== 开始完整诊断 ===');
+            clearResults();
+            
+            addResult('diagnosis-results', '<span class="step-counter">1</span>检查本地存储...', 'info');
+            await checkAuthStorage();
+            
+            addResult('diagnosis-results', '<span class="step-counter">2</span>检查用户状态...', 'info');
+            await checkUserState();
+            
+            addResult('diagnosis-results', '<span class="step-counter">3</span>测试权限逻辑...', 'info');
+            await testPermissionLogic();
+            
+            addResult('diagnosis-results', '<span class="step-counter">4</span>测试API访问...', 'info');
+            await testResourceListAPI();
+            await testUserProfileAPI();
+            
+            addResult('diagnosis-results', '<span class="step-counter">5</span>诊断完成！请查看各部分的详细结果。', 'good');
+        }
+
+        function checkAuthStorage() {
+            console.log('检查认证存储...');
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('user-state-results', '❌ 未找到认证存储数据', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                console.log('认证存储数据:', state);
+                
+                let html = '<h4>📦 认证存储分析</h4>';
+                html += `<div class="code-display">存储结构: ${JSON.stringify(state, null, 2)}</div>`;
+                
+                if (state.user) {
+                    const user = state.user;
+                    html += `<div class="status-box status-good">
+                        ✅ 用户数据存在<br>
+                        ID: ${user.id}<br>
+                        用户名: ${user.username || 'N/A'}<br>
+                        昵称: ${user.nickname || 'N/A'}<br>
+                        角色: <strong>${user.role}</strong><br>
+                        状态: ${user.status || 'N/A'}<br>
+                        认证状态: ${state.isAuthenticated ? '已认证' : '未认证'}
+                    </div>`;
+                    
+                    if (user.role === 'LIFETIME') {
+                        html += '<div class="status-box status-good">✅ 确认：用户角色为LIFETIME，应该有访问权限</div>';
+                    } else if (user.role === 'NORMAL') {
+                        html += '<div class="status-box status-warning">⚠️ 用户角色为NORMAL，无法访问资源详情</div>';
+                    } else {
+                        html += `<div class="status-box status-info">ℹ️ 用户角色为${user.role}</div>`;
+                    }
+                } else {
+                    html += '<div class="status-box status-error">❌ 用户数据不存在</div>';
+                }
+                
+                if (state.token) {
+                    html += `<div class="status-box status-good">✅ Token存在: ${state.token.substring(0, 20)}...</div>`;
+                } else {
+                    html += '<div class="status-box status-error">❌ Token不存在</div>';
+                }
+                
+                addResult('user-state-results', html, 'info');
+            } catch (error) {
+                console.error('检查认证存储失败:', error);
+                addResult('user-state-results', `❌ 检查认证存储失败: ${error.message}`, 'error');
+            }
+        }
+
+        function checkUserState() {
+            console.log('检查用户状态...');
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('user-state-results', '❌ 无法检查用户状态：认证存储不存在', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                const user = state.user;
+                
+                let html = '<h4>👤 用户状态分析</h4>';
+                
+                if (!user) {
+                    html += '<div class="status-box status-error">❌ 用户对象不存在</div>';
+                    addResult('user-state-results', html, 'error');
+                    return;
+                }
+                
+                // 模拟资源详情页面的权限检查
+                html += '<div class="status-box status-info">🔍 模拟资源详情页面权限检查：</div>';
+                
+                const authLoading = false; // 假设已加载完成
+                const isAuthenticated = state.isAuthenticated;
+                
+                html += `<div class="code-display">认证状态检查:
+authLoading: ${authLoading}
+isAuthenticated: ${isAuthenticated}
+user: ${user ? 'exists' : 'null'}
+user.role: ${user?.role || 'N/A'}</div>`;
+                
+                // 步骤1：检查认证加载状态
+                if (authLoading) {
+                    html += '<div class="status-box status-warning">⏳ 认证状态加载中...</div>';
+                } else {
+                    html += '<div class="status-box status-good">✅ 认证状态已加载</div>';
+                }
+                
+                // 步骤2：检查是否认证
+                if (!isAuthenticated) {
+                    html += '<div class="status-box status-error">❌ 用户未认证，会跳转到登录页面</div>';
+                } else {
+                    html += '<div class="status-box status-good">✅ 用户已认证</div>';
+                }
+                
+                // 步骤3：检查用户对象
+                if (!user) {
+                    html += '<div class="status-box status-warning">⚠️ 用户对象不存在，会等待用户数据加载</div>';
+                } else {
+                    html += '<div class="status-box status-good">✅ 用户对象存在</div>';
+                }
+                
+                // 步骤4：检查用户角色
+                if (user && user.role === 'NORMAL') {
+                    html += '<div class="status-box status-error">❌ 普通用户，会被拒绝访问并跳转</div>';
+                } else if (user && ['PREMIUM', 'LIFETIME', 'ADMIN'].includes(user.role)) {
+                    html += '<div class="status-box status-good">✅ 有权限的用户，可以访问资源详情</div>';
+                } else {
+                    html += `<div class="status-box status-warning">⚠️ 未知角色: ${user?.role}</div>`;
+                }
+                
+                // 最终结论
+                if (isAuthenticated && user && user.role !== 'NORMAL') {
+                    html += '<div class="status-box status-good"><strong>🎉 结论：用户应该能够访问资源详情页面</strong></div>';
+                } else {
+                    html += '<div class="status-box status-error"><strong>🚫 结论：用户无法访问资源详情页面</strong></div>';
+                }
+                
+                addResult('user-state-results', html, 'info');
+            } catch (error) {
+                console.error('检查用户状态失败:', error);
+                addResult('user-state-results', `❌ 检查用户状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        function testPermissionLogic() {
+            console.log('测试权限逻辑...');
+            
+            const testCases = [
+                { user: null, expected: false, reason: '未登录' },
+                { user: { role: 'NORMAL' }, expected: false, reason: '普通用户' },
+                { user: { role: 'PREMIUM' }, expected: true, reason: '高级会员' },
+                { user: { role: 'LIFETIME' }, expected: true, reason: '终身会员' },
+                { user: { role: 'ADMIN' }, expected: true, reason: '管理员' }
+            ];
+            
+            let html = '<h4>🧪 权限逻辑测试</h4>';
+            
+            testCases.forEach((testCase, index) => {
+                const user = testCase.user;
+                const isAuthenticated = !!user;
+                
+                // 模拟权限检查逻辑
+                let result = false;
+                let reason = '';
+                
+                if (!isAuthenticated) {
+                    reason = '用户未认证';
+                } else if (!user) {
+                    reason = '用户对象不存在';
+                } else if (user.role === 'NORMAL') {
+                    reason = '普通用户无权限';
+                } else {
+                    result = true;
+                    reason = '有权限访问';
+                }
+                
+                const statusClass = result === testCase.expected ? 'status-good' : 'status-error';
+                const statusIcon = result === testCase.expected ? '✅' : '❌';
+                
+                html += `<div class="status-box ${statusClass}">
+                    ${statusIcon} 测试 ${index + 1}: ${testCase.reason}<br>
+                    输入: ${user ? `role="${user.role}"` : 'null'}<br>
+                    预期: ${testCase.expected ? '允许' : '拒绝'}<br>
+                    实际: ${result ? '允许' : '拒绝'} (${reason})<br>
+                    结果: ${result === testCase.expected ? '通过' : '失败'}
+                </div>`;
+            });
+            
+            addResult('user-state-results', html, 'info');
+        }
+
+        async function testResourceListAPI() {
+            console.log('测试资源列表API...');
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('api-test-results', '❌ 无法测试API：认证存储不存在', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                if (!token) {
+                    addResult('api-test-results', '❌ 无法测试API：Token不存在', 'error');
+                    return;
+                }
+
+                const response = await fetch('/api/resources?limit=1', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                let html = '<h4>📋 资源列表API测试</h4>';
+                html += `<div class="code-display">请求URL: /api/resources?limit=1
+响应状态: ${response.status}
+响应状态文本: ${response.statusText}</div>`;
+
+                if (response.ok) {
+                    const data = await response.json();
+                    html += `<div class="status-box status-good">✅ 资源列表API访问成功</div>`;
+                    html += `<div class="code-display">响应数据: ${JSON.stringify(data, null, 2)}</div>`;
+                    
+                    if (data.resources && data.resources.length > 0) {
+                        const firstResource = data.resources[0];
+                        html += `<div class="status-box status-info">ℹ️ 找到 ${data.resources.length} 个资源，第一个资源ID: ${firstResource.id}</div>`;
+                        
+                        // 自动测试第一个资源的详情
+                        setTimeout(() => testSpecificResourceDetail(firstResource.id), 1000);
+                    }
+                } else {
+                    const errorText = await response.text();
+                    html += `<div class="status-box status-error">❌ 资源列表API访问失败</div>`;
+                    html += `<div class="code-display">错误信息: ${errorText}</div>`;
+                }
+
+                addResult('api-test-results', html, 'info');
+            } catch (error) {
+                console.error('测试资源列表API失败:', error);
+                addResult('api-test-results', `❌ 测试资源列表API失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSpecificResourceDetail(resourceId) {
+            console.log(`测试资源详情API，资源ID: ${resourceId}`);
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+
+                const response = await fetch(`/api/resources/${resourceId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                let html = `<h4>📄 资源详情API测试 (ID: ${resourceId})</h4>`;
+                html += `<div class="code-display">请求URL: /api/resources/${resourceId}
+响应状态: ${response.status}
+响应状态文本: ${response.statusText}</div>`;
+
+                if (response.ok) {
+                    const data = await response.json();
+                    html += `<div class="status-box status-good">✅ 资源详情API访问成功</div>`;
+                    html += `<div class="code-display">资源标题: ${data.title}
+资源分类: ${data.category?.name}
+创建时间: ${data.createdAt}</div>`;
+                } else {
+                    const errorText = await response.text();
+                    html += `<div class="status-box status-error">❌ 资源详情API访问失败</div>`;
+                    html += `<div class="code-display">错误信息: ${errorText}</div>`;
+                }
+
+                addResult('api-test-results', html, 'info');
+            } catch (error) {
+                console.error('测试资源详情API失败:', error);
+                addResult('api-test-results', `❌ 测试资源详情API失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testResourceDetailAPI() {
+            console.log('测试资源详情API...');
+            const resourceId = prompt('请输入要测试的资源ID（留空则使用ID 1）:') || '1';
+            await testSpecificResourceDetail(resourceId);
+        }
+
+        async function testUserProfileAPI() {
+            console.log('测试用户资料API...');
+            try {
+                const authStorage = localStorage.getItem('auth-storage');
+                if (!authStorage) {
+                    addResult('api-test-results', '❌ 无法测试API：认证存储不存在', 'error');
+                    return;
+                }
+
+                const parsed = JSON.parse(authStorage);
+                const token = (parsed.state || parsed).token;
+                
+                if (!token) {
+                    addResult('api-test-results', '❌ 无法测试API：Token不存在', 'error');
+                    return;
+                }
+
+                const response = await fetch('/api/auth/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                let html = '<h4>👤 用户资料API测试</h4>';
+                html += `<div class="code-display">请求URL: /api/auth/profile
+响应状态: ${response.status}
+响应状态文本: ${response.statusText}</div>`;
+
+                if (response.ok) {
+                    const data = await response.json();
+                    html += `<div class="status-box status-good">✅ 用户资料API访问成功</div>`;
+                    html += `<div class="code-display">用户信息: ${JSON.stringify(data, null, 2)}</div>`;
+                    
+                    if (data.role === 'LIFETIME') {
+                        html += '<div class="status-box status-good">✅ API确认：用户角色为LIFETIME</div>';
+                    } else {
+                        html += `<div class="status-box status-warning">⚠️ API返回角色: ${data.role}</div>`;
+                    }
+                } else {
+                    const errorText = await response.text();
+                    html += `<div class="status-box status-error">❌ 用户资料API访问失败</div>`;
+                    html += `<div class="code-display">错误信息: ${errorText}</div>`;
+                }
+
+                addResult('api-test-results', html, 'info');
+            } catch (error) {
+                console.error('测试用户资料API失败:', error);
+                addResult('api-test-results', `❌ 测试用户资料API失败: ${error.message}`, 'error');
+            }
+        }
+
+        function startRealTimeMonitoring() {
+            console.log('开始实时监控...');
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+            }
+
+            addResult('monitoring-results', '🔄 开始实时监控认证状态...', 'info');
+
+            monitoringInterval = setInterval(() => {
+                const authStorage = localStorage.getItem('auth-storage');
+                let status = '未登录';
+                let role = 'N/A';
+                let isAuthenticated = false;
+
+                if (authStorage) {
+                    try {
+                        const parsed = JSON.parse(authStorage);
+                        const state = parsed.state || parsed;
+                        if (state.user) {
+                            status = '已登录';
+                            role = state.user.role;
+                            isAuthenticated = state.isAuthenticated;
+                        }
+                    } catch (e) {
+                        status = '解析错误';
+                    }
+                }
+
+                const timestamp = new Date().toLocaleTimeString();
+                const html = `<div class="status-box status-info">
+                    <strong>实时状态</strong> (${timestamp})<br>
+                    登录状态: ${status}<br>
+                    认证状态: ${isAuthenticated ? '已认证' : '未认证'}<br>
+                    用户角色: ${role}
+                </div>`;
+
+                const container = document.getElementById('monitoring-results');
+                const existingMonitor = container.querySelector('.real-time-status');
+                if (existingMonitor) {
+                    existingMonitor.innerHTML = html;
+                } else {
+                    const monitorDiv = document.createElement('div');
+                    monitorDiv.className = 'real-time-status';
+                    monitorDiv.innerHTML = html;
+                    container.appendChild(monitorDiv);
+                }
+            }, 2000);
+        }
+
+        function stopRealTimeMonitoring() {
+            console.log('停止实时监控...');
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+                monitoringInterval = null;
+            }
+            addResult('monitoring-results', '⏹️ 实时监控已停止', 'warning');
+        }
+
+        // 页面加载时自动开始基础检查
+        window.addEventListener('load', () => {
+            console.log('页面加载完成，开始基础检查...');
+            setTimeout(() => {
+                checkAuthStorage();
+                checkUserState();
+            }, 1000);
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员创建资源功能前端测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .error {
+            color: red;
+            background-color: #ffe6e6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background-color: #e6ffe6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .info {
+            color: blue;
+            background-color: #e6f3ff;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>管理员创建资源功能前端测试</h1>
+    
+    <div class="info">
+        <h3>修复说明</h3>
+        <p>原问题：管理员创建资源会自动立即跳转到资源列表页面，导致无法创建资源。</p>
+        <p>修复方案：修改权限检查逻辑，等待用户状态加载完成后再进行权限检查。</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>修复前的问题代码</h2>
+        <div class="code-block">// 修复前：立即检查权限，可能在用户状态加载完成前就跳转
+useEffect(() => {
+  // 检查用户权限
+  if (!user || user.role !== 'ADMIN') {
+    toast.error('只有管理员可以创建资源');
+    router.push('/resources');
+    return;
+  }
+
+  fetchCategories();
+}, [user, router]);</div>
+        <div class="error">❌ 问题：用户状态可能还在加载中，导致误判为非管理员</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>修复后的代码</h2>
+        <div class="code-block">// 修复后：等待用户状态加载完成后再进行权限检查
+useEffect(() => {
+  // 等待用户状态加载完成后再进行权限检查
+  if (authLoading) {
+    return; // 还在加载中，等待
+  }
+
+  // 检查用户权限
+  if (!user || user.role !== 'ADMIN') {
+    toast.error('只有管理员可以创建资源');
+    router.push('/resources');
+    return;
+  }
+
+  fetchCategories();
+}, [user, router, authLoading]);</div>
+        <div class="success">✅ 修复：现在会等待认证状态加载完成</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>渲染逻辑修复</h2>
+        <div class="code-block">// 修复后：添加了认证加载状态的处理
+// 如果正在加载认证状态，显示加载界面
+if (authLoading) {
+  return (
+    &lt;div className="flex flex-col h-[calc(100vh-172px)]"&gt;
+      &lt;div className="flex-1 flex items-center justify-center"&gt;
+        &lt;div className="text-center"&gt;
+          &lt;div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"&gt;&lt;/div&gt;
+          &lt;p className="text-gray-600"&gt;正在验证权限...&lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+// 如果用户不是管理员，不渲染内容（会被重定向）
+if (!user || user.role !== 'ADMIN') {
+  return null;
+}</div>
+        <div class="success">✅ 修复：添加了认证加载状态的UI反馈</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试1：模拟认证状态加载</h2>
+        <p>模拟用户状态正在加载的情况</p>
+        <button onclick="testAuthLoading()">测试认证加载状态</button>
+        <div id="test1-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试2：模拟管理员权限检查</h2>
+        <p>模拟管理员用户的权限检查流程</p>
+        <button onclick="testAdminPermission()">测试管理员权限</button>
+        <div id="test2-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试3：模拟非管理员权限检查</h2>
+        <p>模拟非管理员用户的权限检查流程</p>
+        <button onclick="testNonAdminPermission()">测试非管理员权限</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <script>
+        // 模拟修复后的权限检查逻辑
+        function simulatePermissionCheck(userState) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const { user, authLoading } = userState;
+                    
+                    // 等待用户状态加载完成后再进行权限检查
+                    if (authLoading) {
+                        resolve({ 
+                            action: 'wait', 
+                            message: '正在验证权限...',
+                            shouldRender: 'loading'
+                        });
+                        return;
+                    }
+
+                    // 检查用户权限
+                    if (!user || user.role !== 'ADMIN') {
+                        resolve({ 
+                            action: 'redirect', 
+                            message: '只有管理员可以创建资源',
+                            shouldRender: 'none'
+                        });
+                        return;
+                    }
+
+                    resolve({ 
+                        action: 'allow', 
+                        message: '权限验证通过，可以创建资源',
+                        shouldRender: 'form'
+                    });
+                }, 500);
+            });
+        }
+
+        async function testAuthLoading() {
+            const resultDiv = document.getElementById('test1-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            const userState = {
+                user: null,
+                authLoading: true
+            };
+            
+            const result = await simulatePermissionCheck(userState);
+            
+            if (result.action === 'wait' && result.shouldRender === 'loading') {
+                resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确显示加载状态</div>';
+            } else {
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：加载状态处理不正确</div>';
+            }
+        }
+
+        async function testAdminPermission() {
+            const resultDiv = document.getElementById('test2-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            const userState = {
+                user: { id: 1, role: 'ADMIN', nickname: '管理员' },
+                authLoading: false
+            };
+            
+            const result = await simulatePermissionCheck(userState);
+            
+            if (result.action === 'allow' && result.shouldRender === 'form') {
+                resultDiv.innerHTML = '<div class="success">✅ 测试成功：管理员权限验证通过</div>';
+            } else {
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：管理员权限验证失败</div>';
+            }
+        }
+
+        async function testNonAdminPermission() {
+            const resultDiv = document.getElementById('test3-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            const userState = {
+                user: { id: 2, role: 'NORMAL', nickname: '普通用户' },
+                authLoading: false
+            };
+            
+            const result = await simulatePermissionCheck(userState);
+            
+            if (result.action === 'redirect' && result.shouldRender === 'none') {
+                resultDiv.innerHTML = '<div class="success">✅ 测试成功：非管理员用户被正确拦截</div>';
+            } else {
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：非管理员用户权限控制失败</div>';
+            }
+        }
+    </script>
+</body>
+</html> 

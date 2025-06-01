@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>影院弹幕敏感词检测前端测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .error {
+            color: red;
+            background-color: #ffe6e6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background-color: #e6ffe6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .info {
+            color: blue;
+            background-color: #e6f3ff;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>影院弹幕敏感词检测前端测试</h1>
+    
+    <div class="info">
+        <h3>修复说明</h3>
+        <p>原问题：前端API路由直接操作数据库，绕过了后端的敏感词检测。</p>
+        <p>修复方案：修改前端API路由，让它调用后端API而不是直接操作数据库。</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>修复前的代码问题</h2>
+        <div class="code-block">// 修复前：直接操作数据库，没有敏感词检测
+const comment = await prisma.comment.create({
+  data: {
+    userId,
+    entityType: 'SCREENING',
+    entityId: id,
+    content: content.trim(),
+    status: 'VISIBLE'
+  }
+});</div>
+        <div class="error">❌ 问题：绕过了后端的敏感词检测服务</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>修复后的代码</h2>
+        <div class="code-block">// 修复后：调用后端API，包含敏感词检测
+const backendResponse = await fetch(`${BACKEND_URL}/api/screenings/${id}/comments`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': authHeader
+  },
+  body: JSON.stringify({ content: content.trim() })
+});
+
+// 检查是否是敏感词检测失败
+if (backendResponse.status === 400 && errorData.message && errorData.message.includes('敏感词')) {
+  return NextResponse.json(
+    { error: '您的内容违反了站点政策。' },
+    { status: 400 }
+  );
+}</div>
+        <div class="success">✅ 修复：现在会调用后端API，包含敏感词检测</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试1：模拟敏感词检测失败</h2>
+        <p>模拟后端返回敏感词检测失败的响应</p>
+        <button onclick="testSensitiveWordError()">测试敏感词检测失败</button>
+        <div id="test1-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试2：模拟正常弹幕</h2>
+        <p>模拟后端返回正常弹幕创建成功的响应</p>
+        <button onclick="testNormalComment()">测试正常弹幕</button>
+        <div id="test2-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试3：模拟网络错误</h2>
+        <p>模拟网络连接失败的情况</p>
+        <button onclick="testNetworkError()">测试网络错误</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <script>
+        // 模拟前端API路由的错误处理逻辑
+        function simulateBackendResponse(responseType) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (responseType === 'sensitive') {
+                        // 模拟敏感词检测失败的响应
+                        const error = new Error('Request failed');
+                        error.response = {
+                            status: 400,
+                            json: () => Promise.resolve({
+                                message: '评论包含敏感词：测试敏感词, 违禁内容'
+                            })
+                        };
+                        reject(error);
+                    } else if (responseType === 'normal') {
+                        // 模拟正常响应
+                        resolve({
+                            ok: true,
+                            json: () => Promise.resolve({
+                                id: 1,
+                                content: '这是正常的弹幕内容',
+                                createdAt: new Date().toISOString(),
+                                user: {
+                                    id: 1,
+                                    nickname: '测试用户'
+                                }
+                            })
+                        });
+                    } else if (responseType === 'network') {
+                        // 模拟网络错误
+                        const error = new Error('Network Error');
+                        reject(error);
+                    }
+                }, 500);
+            });
+        }
+
+        // 模拟修复后的前端API错误处理逻辑
+        async function handleCommentSubmission(responseType) {
+            try {
+                const backendResponse = await simulateBackendResponse(responseType);
+                
+                if (!backendResponse.ok) {
+                    const errorData = await backendResponse.json();
+                    
+                    // 检查是否是敏感词检测失败
+                    if (backendResponse.status === 400 && errorData.message && errorData.message.includes('敏感词')) {
+                        throw new Error('您的内容违反了站点政策。');
+                    }
+                    
+                    throw new Error(errorData.message || '添加评论失败');
+                }
+                
+                const comment = await backendResponse.json();
+                return { success: true, comment };
+            } catch (error) {
+                if (error.response?.status === 400) {
+                    const errorData = await error.response.json();
+                    
+                    // 检查是否是敏感词检测失败
+                    if (errorData.message && errorData.message.includes('敏感词')) {
+                        throw new Error('您的内容违反了站点政策。');
+                    }
+                }
+                throw error;
+            }
+        }
+
+        async function testSensitiveWordError() {
+            const resultDiv = document.getElementById('test1-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                await handleCommentSubmission('sensitive');
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：应该抛出敏感词错误</div>';
+            } catch (err) {
+                if (err.message === '您的内容违反了站点政策。') {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确显示敏感词错误信息</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 测试失败：错误信息不正确 - ${err.message}</div>`;
+                }
+            }
+        }
+
+        async function testNormalComment() {
+            const resultDiv = document.getElementById('test2-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                const result = await handleCommentSubmission('normal');
+                if (result.success && result.comment) {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正常弹幕创建成功</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ 测试失败：返回结果不正确</div>';
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 测试失败：${err.message}</div>`;
+            }
+        }
+
+        async function testNetworkError() {
+            const resultDiv = document.getElementById('test3-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                await handleCommentSubmission('network');
+                resultDiv.innerHTML = '<div class="error">❌ 测试失败：应该抛出网络错误</div>';
+            } catch (err) {
+                if (err.message === 'Network Error') {
+                    resultDiv.innerHTML = '<div class="success">✅ 测试成功：正确处理网络错误</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 测试失败：错误处理不正确 - ${err.message}</div>`;
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

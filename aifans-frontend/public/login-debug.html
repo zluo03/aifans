@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI灵感社 - 登录调试工具</title>
+    <style>
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2563eb;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        .card {
+            background-color: #f9fafb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+        .status {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .error {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            border-left: 4px solid #ef4444;
+        }
+        .warning {
+            background-color: #fffbeb;
+            color: #92400e;
+            border-left: 4px solid #f59e0b;
+        }
+        .success {
+            background-color: #dcfce7;
+            color: #166534;
+            border-left: 4px solid #22c55e;
+        }
+        .info {
+            background-color: #eff6ff;
+            color: #1e40af;
+            border-left: 4px solid #3b82f6;
+        }
+        pre {
+            background-color: #f1f5f9;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-size: 14px;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 8px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+        }
+        button.danger {
+            background-color: #dc2626;
+        }
+        button.danger:hover {
+            background-color: #b91c1c;
+        }
+        .button-group {
+            margin: 20px 0;
+        }
+        input {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI灵感社登录调试工具</h1>
+    
+    <div class="card">
+        <h2>测试登录</h2>
+        <form id="login-form">
+            <div>
+                <label for="login">用户名/邮箱</label>
+                <input type="text" id="login" value="admin" required>
+            </div>
+            <div>
+                <label for="password">密码</label>
+                <input type="password" id="password" value="admin123" required>
+            </div>
+            <button type="submit">测试登录</button>
+        </form>
+        <div id="login-result"></div>
+    </div>
+    
+    <div class="card">
+        <h2>当前认证状态</h2>
+        <div id="status"></div>
+        
+        <div class="button-group">
+            <button onclick="checkAuthState()">检查认证状态</button>
+            <button onclick="refreshAuthState()">强制刷新状态</button>
+            <button class="danger" onclick="clearAuthState()">清除认证状态</button>
+            <button onclick="location.href='/'">返回首页</button>
+        </div>
+    </div>
+    
+    <script>
+        // 检查认证状态
+        function checkAuthState() {
+            const statusDiv = document.getElementById('status');
+            let html = '';
+            
+            try {
+                // 检查localStorage中的认证数据
+                const authStorage = localStorage.getItem('auth-storage');
+                
+                if (!authStorage) {
+                    html += '<div class="status warning">⚠️ localStorage中没有找到认证数据</div>';
+                } else {
+                    const parsed = JSON.parse(authStorage);
+                    const state = parsed.state || {};
+                    
+                    if (state.isAuthenticated) {
+                        html += '<div class="status success">✅ 认证状态: 已登录</div>';
+                    } else {
+                        html += '<div class="status warning">⚠️ 认证状态: 未登录</div>';
+                    }
+                    
+                    if (state.user) {
+                        html += `
+                            <div class="status info">
+                                <strong>用户信息:</strong><br>
+                                ID: ${state.user.id || 'N/A'}<br>
+                                用户名: ${state.user.username || 'N/A'}<br>
+                                邮箱: ${state.user.email || 'N/A'}<br>
+                                角色: ${state.user.role || 'N/A'}<br>
+                                状态: ${state.user.status || 'N/A'}<br>
+                            </div>
+                        `;
+                    } else {
+                        html += '<div class="status warning">⚠️ 没有用户信息</div>';
+                    }
+                    
+                    if (state.token) {
+                        html += `<div class="status info"><strong>Token信息:</strong><br>Token长度: ${state.token.length}字符<br>Token前20字符: ${state.token.substring(0, 20)}...</div>`;
+                    } else {
+                        html += '<div class="status warning">⚠️ 没有token信息</div>';
+                    }
+                }
+                
+                // 检查cookie
+                html += '<div class="status info"><strong>Cookie信息:</strong><br>';
+                if (document.cookie) {
+                    html += `<pre>${document.cookie}</pre>`;
+                } else {
+                    html += '没有cookie';
+                }
+                html += '</div>';
+                
+                // 查看sessionStorage
+                const sessionAuthStorage = sessionStorage.getItem('auth-storage');
+                html += '<div class="status info"><strong>SessionStorage:</strong><br>';
+                if (sessionAuthStorage) {
+                    html += '有认证数据';
+                } else {
+                    html += '没有认证数据';
+                }
+                html += '</div>';
+                
+                statusDiv.innerHTML = html;
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ 检查认证状态时出错: ${error.message}</div>`;
+            }
+        }
+        
+        // 强制刷新认证状态
+        function refreshAuthState() {
+            try {
+                // 触发auth-state-changed事件
+                window.dispatchEvent(new Event('auth-state-changed'));
+                
+                setTimeout(() => {
+                    checkAuthState();
+                    alert('已触发认证状态刷新');
+                }, 500);
+            } catch (error) {
+                alert('刷新认证状态失败: ' + error.message);
+            }
+        }
+        
+        // 清除认证状态
+        function clearAuthState() {
+            if (confirm('确定要清除所有认证状态吗？这将导致您退出登录。')) {
+                try {
+                    // 清除localStorage
+                    localStorage.removeItem('auth-storage');
+                    
+                    // 清除sessionStorage
+                    sessionStorage.removeItem('auth-storage');
+                    
+                    // 清除所有cookie
+                    document.cookie.split(";").forEach(function(c) { 
+                        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                    });
+                    
+                    // 触发登出事件
+                    window.dispatchEvent(new Event('auth-logout'));
+                    
+                    alert('认证状态已清除，请刷新页面');
+                    checkAuthState();
+                } catch (error) {
+                    alert('清除认证状态失败: ' + error.message);
+                }
+            }
+        }
+        
+        // 测试登录
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const loginResult = document.getElementById('login-result');
+            loginResult.innerHTML = '<div class="status info">登录中...</div>';
+            
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                // 获取验证码
+                const captchaResponse = await fetch('/api/auth/captcha');
+                if (!captchaResponse.ok) {
+                    throw new Error('获取验证码失败: ' + captchaResponse.statusText);
+                }
+                
+                const captchaData = await captchaResponse.json();
+                console.log('验证码数据:', captchaData);
+                
+                // 显示验证码
+                if (captchaData.captchaText) {
+                    console.log('验证码文本:', captchaData.captchaText);
+                    loginResult.innerHTML += `<div class="status info">验证码: ${captchaData.captchaText}</div>`;
+                } else {
+                    console.log('注意: 验证码文本不可见，使用调试值');
+                }
+                
+                // 提交登录
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        login,
+                        password,
+                        captchaId: captchaData.captchaId,
+                        // 使用调试环境下的特殊验证码或默认值
+                        captcha: captchaData.captchaText || '1234'
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error('登录失败: ' + (errorData.message || response.statusText));
+                }
+                
+                const data = await response.json();
+                
+                // 保存登录状态到localStorage
+                const authStorage = localStorage.getItem('auth-storage');
+                let parsed = {};
+                if (authStorage) {
+                    parsed = JSON.parse(authStorage);
+                }
+                
+                const newState = {
+                    ...parsed,
+                    state: {
+                        token: data.token,
+                        user: data.user,
+                        isAuthenticated: true,
+                        isLoading: false,
+                        error: null
+                    }
+                };
+                
+                localStorage.setItem('auth-storage', JSON.stringify(newState));
+                
+                // 触发认证状态变更事件
+                window.dispatchEvent(new Event('auth-state-changed'));
+                
+                loginResult.innerHTML = '<div class="status success">✅ 登录成功!</div>';
+                checkAuthState();
+            } catch (error) {
+                loginResult.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        });
+        
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkAuthState();
+        };
+    </script>
+</body>
+</html> 

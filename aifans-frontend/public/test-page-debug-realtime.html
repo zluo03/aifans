@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时页面调试工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .debug-panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-good { color: #28a745; background-color: #d4edda; }
+        .status-warning { color: #856404; background-color: #fff3cd; }
+        .status-error { color: #721c24; background-color: #f8d7da; }
+        .status-info { color: #0c5460; background-color: #d1ecf1; }
+        .status-box {
+            padding: 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border: 1px solid;
+        }
+        .log-entry {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 10px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .test-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .test-links a {
+            background-color: #28a745;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .test-links a:hover {
+            background-color: #218838;
+        }
+        .real-time-log {
+            max-height: 400px;
+            overflow-y: auto;
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 实时页面调试工具</h1>
+    
+    <div class="debug-panel">
+        <h2>📊 当前状态监控</h2>
+        <button onclick="startMonitoring()">开始监控</button>
+        <button onclick="stopMonitoring()">停止监控</button>
+        <button onclick="clearLogs()">清除日志</button>
+        <div id="current-status"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>🔗 测试链接</h2>
+        <div class="test-links">
+            <a href="/resources" target="_blank">资源列表</a>
+            <a href="/resources/1" target="_blank">资源详情(ID:1)</a>
+            <a href="/resources/2" target="_blank">资源详情(ID:2)</a>
+            <a href="/resources/3" target="_blank">资源详情(ID:3)</a>
+        </div>
+        <p><small>点击链接在新标签页中测试，观察控制台输出和页面行为</small></p>
+    </div>
+
+    <div class="debug-panel">
+        <h2>📝 实时日志</h2>
+        <div id="real-time-log" class="real-time-log"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>🧪 手动测试</h2>
+        <button onclick="testResourceAccess()">测试资源访问流程</button>
+        <button onclick="testAuthState()">测试认证状态</button>
+        <button onclick="simulatePageNavigation()">模拟页面导航</button>
+        <div id="manual-test-results"></div>
+    </div>
+
+    <script>
+        let monitoringInterval = null;
+        let logBuffer = [];
+
+        // 重写console.log来捕获日志
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            logToRealTime('LOG', args);
+        };
+        
+        console.error = function(...args) {
+            originalConsoleError.apply(console, args);
+            logToRealTime('ERROR', args);
+        };
+
+        function logToRealTime(type, args) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            
+            logBuffer.push(`[${timestamp}] [${type}] ${message}`);
+            if (logBuffer.length > 100) {
+                logBuffer = logBuffer.slice(-100);
+            }
+            updateRealTimeLog();
+        }
+
+        function updateRealTimeLog() {
+            const logDiv = document.getElementById('real-time-log');
+            logDiv.innerHTML = logBuffer.join('\n');
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLogs() {
+            logBuffer = [];
+            updateRealTimeLog();
+        }
+
+        function addResult(containerId, content, type = 'info') {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `status-box status-${type}`;
+            resultDiv.innerHTML = content;
+            container.appendChild(resultDiv);
+        }
+
+        function startMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+            }
+            
+            console.log('开始实时监控页面状态...');
+            
+            monitoringInterval = setInterval(() => {
+                const authStorage = localStorage.getItem('auth-storage');
+                let status = '未登录';
+                let role = 'N/A';
+                let isAuthenticated = false;
+                let token = null;
+
+                if (authStorage) {
+                    try {
+                        const parsed = JSON.parse(authStorage);
+                        const state = parsed.state || parsed;
+                        if (state.user) {
+                            status = '已登录';
+                            role = state.user.role;
+                            isAuthenticated = state.isAuthenticated;
+                            token = state.token;
+                        }
+                    } catch (e) {
+                        status = '解析错误';
+                    }
+                }
+
+                const timestamp = new Date().toLocaleTimeString();
+                const statusHtml = `
+                    <div class="status-box status-info">
+                        <strong>实时状态监控</strong> (${timestamp})<br>
+                        登录状态: ${status}<br>
+                        认证状态: ${isAuthenticated ? '已认证' : '未认证'}<br>
+                        用户角色: ${role}<br>
+                        Token状态: ${token ? '有效' : '无'}<br>
+                        当前页面: ${window.location.pathname}
+                    </div>
+                `;
+
+                const container = document.getElementById('current-status');
+                container.innerHTML = statusHtml;
+            }, 2000);
+        }
+
+        function stopMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+                monitoringInterval = null;
+            }
+            console.log('停止实时监控');
+        }
+
+        async function testResourceAccess() {
+            console.log('=== 开始测试资源访问流程 ===');
+            
+            // 1. 检查认证状态
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('manual-test-results', '❌ 未找到认证存储', 'error');
+                return;
+            }
+
+            const parsed = JSON.parse(authStorage);
+            const state = parsed.state || parsed;
+            const user = state.user;
+            const token = state.token;
+
+            console.log('用户信息:', user);
+            console.log('Token:', token ? token.substring(0, 20) + '...' : 'none');
+
+            if (!user) {
+                addResult('manual-test-results', '❌ 用户对象不存在', 'error');
+                return;
+            }
+
+            if (user.role === 'NORMAL') {
+                addResult('manual-test-results', '⚠️ 普通用户，应该被阻止访问', 'warning');
+                return;
+            }
+
+            addResult('manual-test-results', `✅ 用户权限检查通过 (${user.role})`, 'good');
+
+            // 2. 测试API调用
+            try {
+                console.log('测试资源列表API...');
+                const listResponse = await fetch('/api/resources?limit=1', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!listResponse.ok) {
+                    throw new Error(`资源列表API失败: ${listResponse.status}`);
+                }
+
+                const listData = await listResponse.json();
+                console.log('资源列表API成功:', listData);
+
+                if (listData.resources && listData.resources.length > 0) {
+                    const resourceId = listData.resources[0].id;
+                    
+                    console.log(`测试资源详情API (ID: ${resourceId})...`);
+                    const detailResponse = await fetch(`/api/resources/${resourceId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!detailResponse.ok) {
+                        throw new Error(`资源详情API失败: ${detailResponse.status}`);
+                    }
+
+                    const detailData = await detailResponse.json();
+                    console.log('资源详情API成功:', detailData);
+                    
+                    addResult('manual-test-results', `✅ API测试全部通过，资源: ${detailData.title}`, 'good');
+                } else {
+                    addResult('manual-test-results', '⚠️ 没有找到任何资源', 'warning');
+                }
+            } catch (error) {
+                console.error('API测试失败:', error);
+                addResult('manual-test-results', `❌ API测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAuthState() {
+            console.log('=== 测试认证状态 ===');
+            
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('manual-test-results', '❌ 认证存储不存在', 'error');
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(authStorage);
+                const state = parsed.state || parsed;
+                
+                console.log('完整认证状态:', state);
+                
+                addResult('manual-test-results', `
+                    <strong>认证状态详情:</strong><br>
+                    用户ID: ${state.user?.id || 'N/A'}<br>
+                    用户名: ${state.user?.username || 'N/A'}<br>
+                    昵称: ${state.user?.nickname || 'N/A'}<br>
+                    角色: ${state.user?.role || 'N/A'}<br>
+                    状态: ${state.user?.status || 'N/A'}<br>
+                    认证状态: ${state.isAuthenticated ? '是' : '否'}<br>
+                    Token长度: ${state.token ? state.token.length : 0}
+                `, 'info');
+            } catch (error) {
+                console.error('解析认证状态失败:', error);
+                addResult('manual-test-results', `❌ 解析认证状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        function simulatePageNavigation() {
+            console.log('=== 模拟页面导航 ===');
+            
+            // 模拟点击资源卡片的逻辑
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                addResult('manual-test-results', '❌ 未登录，无法导航', 'error');
+                return;
+            }
+
+            const parsed = JSON.parse(authStorage);
+            const user = (parsed.state || parsed).user;
+
+            if (!user) {
+                addResult('manual-test-results', '❌ 用户对象不存在，无法导航', 'error');
+                return;
+            }
+
+            if (user.role === 'NORMAL') {
+                addResult('manual-test-results', '⚠️ 普通用户，应该显示升级提示', 'warning');
+                return;
+            }
+
+            addResult('manual-test-results', `✅ 导航权限检查通过，用户角色: ${user.role}`, 'good');
+            
+            // 模拟导航到资源详情页面
+            console.log('模拟导航到资源详情页面...');
+            addResult('manual-test-results', '🔄 模拟导航成功，应该能够访问资源详情', 'info');
+        }
+
+        // 页面加载时自动开始监控
+        window.addEventListener('load', () => {
+            console.log('页面调试工具加载完成');
+            startMonitoring();
+        });
+
+        // 页面卸载时停止监控
+        window.addEventListener('beforeunload', () => {
+            stopMonitoring();
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>影院API测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        button { margin: 5px; padding: 10px 15px; }
+    </style>
+</head>
+<body>
+    <h1>影院API测试</h1>
+    
+    <button onclick="testAPI()">测试影院API</button>
+    <button onclick="checkAuth()">检查认证状态</button>
+    
+    <div id="results"></div>
+
+    <script>
+        function addResult(title, content, type = 'success') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<h3>${title}</h3><pre>${content}</pre>`;
+            results.appendChild(div);
+        }
+
+        function checkAuth() {
+            const authStorage = localStorage.getItem('auth-storage');
+            if (authStorage) {
+                try {
+                    const parsed = JSON.parse(authStorage);
+                    addResult('认证状态', JSON.stringify(parsed, null, 2));
+                } catch (e) {
+                    addResult('认证状态解析错误', e.message, 'error');
+                }
+            } else {
+                addResult('认证状态', '未找到认证信息', 'error');
+            }
+        }
+
+        async function testAPI() {
+            try {
+                addResult('API测试', '正在调用 /api/screenings...');
+                
+                const response = await fetch('/api/screenings');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addResult('API调用成功', `状态码: ${response.status}
+响应数据: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    addResult('API调用失败', `状态码: ${response.status}
+错误信息: ${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                addResult('API调用错误', error.message, 'error');
+            }
+        }
+
+        // 页面加载时自动检查认证状态
+        window.onload = function() {
+            checkAuth();
+        };
+    </script>
+</body>
+</html> 
