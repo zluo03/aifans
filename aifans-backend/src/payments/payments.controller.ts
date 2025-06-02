@@ -1,20 +1,26 @@
-import { Controller, Post, Get, Body, Param, Req, UseGuards, Query, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Req, UseGuards, Query, Res, Logger, All } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateOrderDto } from './dto/payment.dto';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Role } from '../types/prisma-enums';
 
 // 扩展 Request 类型，添加 user 属性
 interface RequestWithUser extends Request {
-  user: { id: number };
+  user: {
+    id: number;
+  };
 }
 
 @ApiTags('支付管理')
 @Controller('payments')
 export class PaymentsController {
   private readonly testMode: boolean;
+  private readonly logger = new Logger(PaymentsController.name);
   
   constructor(
     private readonly paymentsService: PaymentsService,
@@ -26,24 +32,80 @@ export class PaymentsController {
   @Post('create-order')
   @ApiOperation({ summary: '创建支付订单' })
   @UseGuards(AuthGuard('jwt'))
-  async createOrder(@Body() createOrderDto: CreateOrderDto, @Req() req: RequestWithUser) {
+  async createOrder(
+    @Body() createOrderDto: CreateOrderDto,
+    @Req() req: RequestWithUser,
+  ) {
     const userId = req.user.id;
     return this.paymentsService.createOrder(userId, createOrderDto);
   }
 
   @Post('alipay-notify')
   @ApiOperation({ summary: '支付宝回调接口' })
-  async alipayNotify(@Body() notifyData: any) {
-    return this.paymentsService.handleAlipayNotification(notifyData);
+  async alipayNotify(@Body() notifyData: any, @Req() req: Request) {
+    this.logger.log('收到支付宝回调通知:', {
+      headers: req.headers,
+      body: notifyData,
+      query: req.query
+    });
+    
+    try {
+      const result = await this.paymentsService.handleAlipayNotification(notifyData);
+      this.logger.log('支付宝回调处理结果:', result);
+      return result;
+    } catch (error) {
+      this.logger.error('处理支付宝回调时出错:', error);
+      return { success: false, message: error.message };
+    }
+  }
+  
+  @All('alipay/notify')
+  @ApiOperation({ summary: '支付宝回调接口(兼容路径)' })
+  async alipayNotifyAlternative(@Body() notifyData: any, @Req() req: Request) {
+    this.logger.log('收到支付宝回调通知(兼容路径):', {
+      headers: req.headers,
+      body: notifyData,
+      query: req.query,
+      method: req.method,
+      path: req.path,
+      url: req.url,
+      originalUrl: req.originalUrl
+    });
+    
+    // 合并请求体和查询参数，确保能处理GET和POST请求
+    const combinedData = {
+      ...req.query,
+      ...notifyData
+    };
+    
+    try {
+      const result = await this.paymentsService.handleAlipayNotification(combinedData);
+      this.logger.log('支付宝回调处理结果:', result);
+      return result;
+    } catch (error) {
+      this.logger.error('处理支付宝回调时出错:', error);
+      return { success: false, message: error.message };
+    }
   }
 
-  @Get('order-status/:orderId')
+  @Get('order-status/:id')
   @ApiOperation({ summary: '查询订单状态' })
-  @ApiParam({ name: 'orderId', description: '订单ID' })
+  @ApiParam({ name: 'id', description: '订单ID' })
   @UseGuards(AuthGuard('jwt'))
-  async getOrderStatus(@Param('orderId') orderId: string, @Req() req: RequestWithUser) {
+  async getOrderStatus(
+    @Param('id') orderId: string,
+    @Req() req: RequestWithUser,
+  ) {
     const userId = req.user.id;
     return this.paymentsService.getOrderStatus(+orderId, userId);
+  }
+  
+  @Post('refresh-alipay-config')
+  @ApiOperation({ summary: '刷新支付宝配置' })
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.ADMIN)
+  async refreshAlipayConfig() {
+    return this.paymentsService.refreshAlipayConfig();
   }
   
   @Get('mock-pay')
@@ -52,6 +114,11 @@ export class PaymentsController {
     @Query('orderId') orderId: string,
     @Res() res: Response
   ) {
+    // 如果没有通过orderId参数，尝试从orderid参数获取（处理大小写不一致问题）
+    if (!orderId && res.req.query.orderid) {
+      orderId = res.req.query.orderid as string;
+    }
+    
     if (!this.testMode) {
       return res.status(403).send('此功能仅在测试环境可用');
     }

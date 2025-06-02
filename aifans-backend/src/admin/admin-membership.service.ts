@@ -1,10 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMembershipProductDto, UpdateMembershipProductDto } from './dto/membership.dto';
+import { UpdatePaymentSettingsDto } from '../membership/dto/payment-settings.dto';
+import { PaymentsService } from '../payments/payments.service';
 
 @Injectable()
 export class AdminMembershipService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentsService: PaymentsService
+  ) {}
 
   async findAll() {
     return this.prisma.membershipProduct.findMany({
@@ -92,5 +97,82 @@ export class AdminMembershipService {
         createdAt: 'desc',
       },
     });
+  }
+
+  // 支付设置相关方法
+  async getPaymentSettings() {
+    const settings = await this.prisma.paymentSettings.findFirst();
+    const result = settings || {
+      alipayAppId: '',
+      alipayPrivateKey: '',
+      alipayPublicKey: '',
+      alipayGatewayUrl: 'https://openapi.alipay.com/gateway.do',
+      isSandbox: true
+    };
+    
+    // 隐藏敏感信息
+    if (result.alipayPrivateKey) {
+      result.alipayPrivateKey = '******';
+    }
+    
+    return {
+      success: true,
+      data: result
+    };
+  }
+
+  async updatePaymentSettings(updateDto: UpdatePaymentSettingsDto) {
+    const existing = await this.prisma.paymentSettings.findFirst();
+    
+    // 如果提供了占位符密钥，则不更新该字段
+    if (updateDto.alipayPrivateKey === '******') {
+      delete updateDto.alipayPrivateKey;
+    }
+    
+    let result;
+    if (existing) {
+      result = await this.prisma.paymentSettings.update({
+        where: { id: existing.id },
+        data: updateDto
+      });
+    } else {
+      result = await this.prisma.paymentSettings.create({
+        data: updateDto
+      });
+    }
+    
+    // 刷新支付宝配置
+    await this.refreshAlipayConfig();
+    
+    // 隐藏敏感信息
+    if (result.alipayPrivateKey) {
+      result.alipayPrivateKey = '******';
+    }
+    
+    return {
+      success: true,
+      message: '支付设置已更新',
+      data: result
+    };
+  }
+
+  async testPaymentSettings() {
+    const settings = await this.prisma.paymentSettings.findFirst();
+    
+    if (!settings || !settings.alipayAppId || !settings.alipayPrivateKey || !settings.alipayPublicKey) {
+      return {
+        success: false,
+        message: '支付配置不完整'
+      };
+    }
+    
+    return {
+      success: true,
+      message: '支付配置测试成功'
+    };
+  }
+
+  async refreshAlipayConfig() {
+    return this.paymentsService.refreshAlipayConfig();
   }
 } 

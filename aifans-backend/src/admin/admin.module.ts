@@ -16,11 +16,43 @@ import { UploadLimitService } from './upload-limit.service';
 import { UploadLimitController } from './upload-limit.controller';
 import { SensitiveWordsController } from './sensitive-words.controller';
 import { SensitiveWordsService } from './sensitive-words.service';
+import { AdminMembershipController, AdminPaymentSettingsController } from './admin-membership.controller';
+import { AdminMembershipService } from './admin-membership.service';
+import { AdminSettingsController } from './admin-settings.controller';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-  imports: [PrismaModule, CacheModule, MailModule],
-  controllers: [AdminUsersController, AdminPostsController, AdminAnnouncementsController, AdminMailController, AiPlatformsController, UploadLimitController, SensitiveWordsController],
-  providers: [AdminUsersService, AdminPostsService, AdminAnnouncementsService, AdminMailService, AIPlatformsService, UploadLimitService, SensitiveWordsService],
-  exports: [AdminUsersService, AdminPostsService, AdminAnnouncementsService, AdminMailService, AIPlatformsService, SensitiveWordsService],
+  imports: [PrismaModule, CacheModule, MailModule, PaymentsModule],
+  controllers: [
+    AdminUsersController, 
+    AdminPostsController, 
+    AdminAnnouncementsController, 
+    AdminMailController, 
+    AiPlatformsController, 
+    UploadLimitController,
+    SensitiveWordsController,
+    AdminMembershipController,
+    AdminSettingsController,
+    AdminPaymentSettingsController,
+  ],
+  providers: [
+    AdminUsersService, 
+    AdminPostsService, 
+    AdminAnnouncementsService, 
+    AdminMailService, 
+    AIPlatformsService, 
+    UploadLimitService,
+    SensitiveWordsService,
+    AdminMembershipService,
+  ],
+  exports: [
+    AdminUsersService, 
+    AdminPostsService, 
+    AdminAnnouncementsService, 
+    AdminMailService, 
+    AIPlatformsService, 
+    SensitiveWordsService,
+    AdminMembershipService,
+  ],
 })
 export class AdminModule {} 

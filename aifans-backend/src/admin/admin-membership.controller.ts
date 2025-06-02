@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateMembershipProductDto, UpdateMembershipProductDto } from './dto/membership.dto';
 import { Role } from '../types/prisma-enums';
+import { UpdatePaymentSettingsDto } from '../membership/dto/payment-settings.dto';
 
 @ApiTags('管理员 - 会员产品')
 @Controller('admin/membership/products')
@@ -51,5 +52,37 @@ export class AdminMembershipController {
   @ApiOperation({ summary: '获取所有支付订单' })
   async findAllOrders() {
     return this.adminMembershipService.findAllOrders();
+  }
+}
+
+@ApiTags('管理员 - 支付设置')
+@Controller('admin/membership/payment-settings')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(Role.ADMIN)
+export class AdminPaymentSettingsController {
+  constructor(private readonly adminMembershipService: AdminMembershipService) {}
+
+  @Get()
+  @ApiOperation({ summary: '获取支付设置' })
+  async getPaymentSettings() {
+    return this.adminMembershipService.getPaymentSettings();
+  }
+
+  @Post()
+  @ApiOperation({ summary: '更新支付设置' })
+  async updatePaymentSettings(@Body() updateDto: UpdatePaymentSettingsDto) {
+    return this.adminMembershipService.updatePaymentSettings(updateDto);
+  }
+
+  @Post('test')
+  @ApiOperation({ summary: '测试支付设置' })
+  async testPaymentSettings() {
+    return this.adminMembershipService.testPaymentSettings();
+  }
+
+  @Post('refresh')
+  @ApiOperation({ summary: '刷新支付宝配置' })
+  async refreshAlipayConfig() {
+    return this.adminMembershipService.refreshAlipayConfig();
   }
 } 
