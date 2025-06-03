@@ -6,7 +6,6 @@ import { CreatorWorksTabs } from '../components/creator-works-tabs';
 import { CreatorMessageDialog } from '../components/creator-message-dialog';
 import { useAuthStore } from '@/lib/store/auth-store';
 import { useParams, useRouter } from 'next/navigation';
-import axios from 'axios';
 import { toast } from 'sonner';
 import { parseCreatorData } from '@/lib/utils/json-parser';
 
@@ -33,17 +32,44 @@ export default function CreatorDetailPage() {
   const { user } = useAuthStore();
   const router = useRouter();
   const params = useParams();
-  const userId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const userId = params?.id ? (Array.isArray(params.id) ? params.id[0] : params.id) : null;
   const [creator, setCreator] = useState<Creator | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 禁用右键菜单
+  useEffect(() => {
+    const disableContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    document.addEventListener('contextmenu', disableContextMenu);
+    
+    return () => {
+      document.removeEventListener('contextmenu', disableContextMenu);
+    };
+  }, []);
+
   const fetchCreator = async () => {
+    if (!userId) {
+      toast.error('创作者ID无效');
+      router.push('/creators');
+      return;
+    }
+
     try {
       // 通过userId获取创作者信息
       const response = await fetch(`/api/creators/user/${userId}`);
       
       if (response.ok) {
         const data = await response.json();
+        
+        // 检查data是否是错误对象
+        if (data && data.error) {
+          toast.error(data.error || '获取创作者信息失败');
+          router.push('/creators');
+          return;
+        }
         
         if (data) {
           const parsedCreator = parseCreatorData(data);
@@ -53,7 +79,8 @@ export default function CreatorDetailPage() {
           router.push('/creators');
         }
       } else {
-        toast.error('创作者不存在');
+        const errorData = await response.json().catch(() => ({ error: '创作者不存在' }));
+        toast.error(errorData.error || '创作者不存在');
         router.push('/creators');
       }
     } catch (error) {

@@ -1,123 +1,117 @@
 import React, { useState } from 'react';
-import { parseCreatorData } from '@/lib/utils/json-parser';
 import { MediaPreviewModal } from './media-preview-modal';
 
 interface CreatorWorksTabsProps {
-  creator: {
-    images?: any[];
-    videos?: any[];
-    audios?: any[];
-  };
+  creator: any;
+}
+
+// 预览媒体类型
+interface PreviewMedia {
+  url: string;
+  type: 'image' | 'video' | 'audio';
+  title?: string;
 }
 
 export function CreatorWorksTabs({ creator }: CreatorWorksTabsProps) {
   const [tab, setTab] = useState<'image' | 'video' | 'audio'>('image');
-  const [previewMedia, setPreviewMedia] = useState<{
-    url: string;
-    type: 'image' | 'video';
-    title?: string;
-  } | null>(null);
-  
-  // 解析创作者数据
-  const parsedCreator = parseCreatorData(creator);
-  const images = parsedCreator?.images || [];
-  const videos = parsedCreator?.videos || [];
-  const audios = parsedCreator?.audios || [];
-  
-  // 关键调试信息
-  console.log('🖼️ 图片数据:', images.length > 0 ? `${images.length}张图片` : '无图片');
-  if (images.length > 0) {
+  // 预览媒体状态
+  const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
 
-  }
-  
-  const hasImages = images && images.length > 0;
-  const hasVideos = videos && videos.length > 0;
-  const hasAudios = audios && audios.length > 0;
-  
-  // 如果没有图片但有其他内容，默认显示有内容的标签
-  React.useEffect(() => {
-    if (!hasImages && hasVideos) setTab('video');
-    else if (!hasImages && !hasVideos && hasAudios) setTab('audio');
-  }, [hasImages, hasVideos, hasAudios]);
+  // 处理图片点击预览
+  const handleImagePreview = (image: any) => {
+    if (image.url && image.url.trim() !== '') {
+      setPreviewMedia({ 
+        url: image.url, 
+        type: 'image', 
+        title: image.title || image.desc 
+      });
+    }
+  };
+
+  // 处理视频点击预览
+  const handleVideoPreview = (video: any) => {
+    if (video.url && video.url.trim() !== '') {
+      setPreviewMedia({ 
+        url: video.url, 
+        type: 'video', 
+        title: video.title || video.desc 
+      });
+    }
+  };
+
+  // 处理音频点击预览 - 不再需要
+  const handleAudioPreview = (audio: any) => {
+    // 音频直接在卡片内播放，不需要弹窗预览
+  };
+
+  // 获取当前选项卡的作品数量
+  const getWorkCount = () => {
+    if (tab === 'image') return creator.images?.length || 0;
+    if (tab === 'video') return creator.videos?.length || 0;
+    if (tab === 'audio') return creator.audios?.length || 0;
+    return 0;
+  };
+
+  const images = creator.images || [];
+  const videos = creator.videos || [];
+  const audios = creator.audios || [];
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-6 pb-8">
-      {/* 标签切换 */}
-      <div className="flex gap-2 mb-8 justify-center">
-        {hasImages && (
-          <button
-            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              tab === 'image' 
-                ? 'bg-primary-gradient text-white shadow-lg' 
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-            }`}
-            onClick={() => setTab('image')}
-          >
-            图片作品 ({images?.length || 0})
-          </button>
-        )}
-        
-        {hasVideos && (
-          <button
-            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              tab === 'video' 
-                ? 'bg-secondary-gradient text-white shadow-lg' 
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-            }`}
-            onClick={() => setTab('video')}
-          >
-            视频作品 ({videos?.length || 0})
-          </button>
-        )}
-        
-        {hasAudios && (
-          <button
-            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              tab === 'audio' 
-                ? 'bg-rainbow-gradient text-white shadow-lg' 
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-            }`}
-            onClick={() => setTab('audio')}
-          >
-            音频作品 ({audios?.length || 0})
-          </button>
-        )}
+    <div className="mt-12 max-w-5xl mx-auto px-4">
+      <div className="flex border-b border-gray-200">
+        <button
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'image'
+              ? 'text-primary-gradient border-b-2 border-[var(--custom-primary)]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setTab('image')}
+        >
+          图片作品 ({images.length})
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'video'
+              ? 'text-primary-gradient border-b-2 border-[var(--custom-primary)]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setTab('video')}
+        >
+          视频作品 ({videos.length})
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'audio'
+              ? 'text-primary-gradient border-b-2 border-[var(--custom-primary)]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setTab('audio')}
+        >
+          音频作品 ({audios.length})
+        </button>
       </div>
 
-      {/* 内容展示 */}
-      <div className="min-h-[400px]">
+      <div className="mt-6">
         {/* 图片作品 */}
-        {tab === 'image' && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-            {images?.map((img: any, idx: number) => (
+        {tab === 'image' && images.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {images.map((img: any, idx: number) => (
               <div 
                 key={idx} 
-                className="group relative overflow-hidden rounded-xl bg-white shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-2 transition-all duration-300 cursor-pointer"
-                onClick={() => {
-                  if (img.url && img.url.trim() !== '') {
-                    setPreviewMedia({ url: img.url, type: 'image', title: img.title });
-                  }
-                }}
+                className="group relative aspect-square rounded-lg overflow-hidden shadow-sm border border-gray-100 cursor-pointer"
+                onClick={() => handleImagePreview(img)}
               >
-                <div className="aspect-square">
-                  <img 
-                    src={img.url} 
-                    alt={img.title || `作品 ${idx + 1}`} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    style={{
-                      userSelect: 'none',
-                      WebkitUserSelect: 'none',
-                      MozUserSelect: 'none',
-                      msUserSelect: 'none'
-                    } as React.CSSProperties}
-                    onError={(e) => console.error(`❌ 图片加载失败:`, img.url)}
-                    onContextMenu={(e) => e.preventDefault()}
-                    onDragStart={(e) => e.preventDefault()}
-                  />
-                </div>
+                <img 
+                  src={img.url} 
+                  alt={img.title || `图片作品 ${idx+1}`} 
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                />
                 {img.title && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <p className="text-white text-sm font-medium truncate">{img.title}</p>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                    <h3 className="text-white text-sm font-medium truncate">{img.title}</h3>
+                    {img.desc && (
+                      <p className="text-white/80 text-xs mt-1 line-clamp-2">{img.desc}</p>
+                    )}
                   </div>
                 )}
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -133,55 +127,33 @@ export function CreatorWorksTabs({ creator }: CreatorWorksTabsProps) {
         )}
 
         {/* 视频作品 */}
-        {tab === 'video' && (
+        {tab === 'video' && videos.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {videos?.map((video: any, idx: number) => (
+            {videos.map((video: any, idx: number) => (
               <div 
                 key={idx} 
                 className="group bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-2 transition-all duration-300 cursor-pointer"
-                onClick={() => {
-                  if (video.url && video.url.trim() !== '') {
-                    setPreviewMedia({ url: video.url, type: 'video', title: video.title });
-                  }
-                }}
+                onClick={() => handleVideoPreview(video)}
               >
                 <div className="aspect-video relative">
-                  <video 
-                    src={video.url} 
+                  <video
+                    src={video.url}
                     className="w-full h-full object-cover"
-                    poster={video.thumbnailUrl}
-                    style={{
-                      userSelect: 'none',
-                      WebkitUserSelect: 'none',
-                      MozUserSelect: 'none',
-                      msUserSelect: 'none'
-                    } as React.CSSProperties}
-                    onContextMenu={(e) => e.preventDefault()}
-                    controlsList="nodownload nofullscreen noremoteplayback"
-                    disablePictureInPicture
                     muted
-                    preload="metadata"
+                    onMouseOver={(e) => (e.target as HTMLVideoElement).play()}
+                    onMouseOut={(e) => {
+                      const videoEl = e.target as HTMLVideoElement;
+                      videoEl.pause();
+                      videoEl.currentTime = 0;
+                    }}
                   />
-                  <div className="absolute top-3 left-3">
-                    <div className="bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full">
-                      视频
-                    </div>
-                  </div>
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/20">
-                    <div className="w-16 h-16 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg">
-                      <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.01M15 10h1.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
                       </svg>
                     </div>
                   </div>
-                </div>
-                <div className="p-4">
-                  {video.title && (
-                    <h4 className="font-semibold text-gray-900 mb-2 line-clamp-1">{video.title}</h4>
-                  )}
-                  {video.desc && (
-                    <p className="text-sm text-gray-600 line-clamp-2">{video.desc}</p>
-                  )}
                 </div>
               </div>
             ))}
@@ -189,66 +161,42 @@ export function CreatorWorksTabs({ creator }: CreatorWorksTabsProps) {
         )}
 
         {/* 音频作品 */}
-        {tab === 'audio' && hasAudios && (
-          <div className="space-y-6 max-w-3xl mx-auto">
-            {audios?.map((audio: any, idx: number) => (
-              <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 bg-secondary-gradient rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                    {idx + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {audio.title && (
-                      <h4 className="font-semibold text-gray-900 mb-2 truncate">{audio.title}</h4>
-                    )}
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <audio 
-                        src={audio.url} 
-                        controls 
-                        className="w-full"
-                        style={{
-                          userSelect: 'none',
-                          WebkitUserSelect: 'none',
-                          MozUserSelect: 'none',
-                          msUserSelect: 'none'
-                        } as React.CSSProperties}
-                        onContextMenu={(e) => e.preventDefault()}
-                        controlsList="nodownload noremoteplayback"
-                      />
+        {tab === 'audio' && audios.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {audios.map((audio: any, idx: number) => (
+              <div 
+                key={idx} 
+                className="group bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-2 transition-all duration-300"
+              >
+                <div className="relative flex flex-col items-center justify-center bg-gradient-to-r from-blue-50 to-indigo-50 p-4" style={{aspectRatio: '2/1'}}>
+                  <div className="flex items-center justify-between w-full mb-3">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[var(--custom-primary)] to-[var(--custom-secondary)] flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
                     </div>
                   </div>
+                  <audio 
+                    src={audio.url} 
+                    controls 
+                    className="w-full" 
+                    controlsList="nodownload"
+                  />
                 </div>
-                {audio.desc && (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <p className="text-sm text-gray-600 leading-relaxed">{audio.desc}</p>
-                  </div>
-                )}
               </div>
             ))}
           </div>
         )}
 
-        {/* 空状态 */}
-        {((tab === 'image' && !hasImages) || 
-          (tab === 'video' && !hasVideos) || 
-          (tab === 'audio' && !hasAudios)) && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-6">
-              {tab === 'image' && (
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              )}
-              {tab === 'video' && (
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              )}
-              {tab === 'audio' && (
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              )}
+        {/* 无作品显示 */}
+        {getWorkCount() === 0 && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {tab === 'image' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />}
+                {tab === 'video' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />}
+                {tab === 'audio' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />}
+              </svg>
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               暂无{tab === 'image' ? '图片' : tab === 'video' ? '视频' : '音频'}作品
@@ -260,9 +208,9 @@ export function CreatorWorksTabs({ creator }: CreatorWorksTabsProps) {
         )}
       </div>
 
-      {/* 媒体预览模态框 */}
+      {/* 媒体预览模态框 - 只用于图片和视频 */}
       <MediaPreviewModal
-        open={!!previewMedia && !!previewMedia.url}
+        open={!!previewMedia && !!previewMedia.url && previewMedia.type !== 'audio'}
         onOpenChange={() => setPreviewMedia(null)}
         mediaUrl={previewMedia?.url || ''}
         mediaType={previewMedia?.type || 'image'}
