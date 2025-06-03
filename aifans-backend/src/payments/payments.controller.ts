@@ -42,26 +42,29 @@ export class PaymentsController {
 
   @Post('alipay-notify')
   @ApiOperation({ summary: '支付宝回调接口' })
-  async alipayNotify(@Body() notifyData: any, @Req() req: Request) {
+  async alipayNotify(@Body() notifyData: any, @Req() req: Request, @Res() res: Response) {
     this.logger.log('收到支付宝回调通知:', {
       headers: req.headers,
       body: notifyData,
       query: req.query
     });
-    
     try {
       const result = await this.paymentsService.handleAlipayNotification(notifyData);
       this.logger.log('支付宝回调处理结果:', result);
-      return result;
+      if (result.success) {
+        return res.send('success');
+      } else {
+        return res.send('fail');
+      }
     } catch (error) {
       this.logger.error('处理支付宝回调时出错:', error);
-      return { success: false, message: error.message };
+      return res.send('fail');
     }
   }
   
   @All('alipay/notify')
   @ApiOperation({ summary: '支付宝回调接口(兼容路径)' })
-  async alipayNotifyAlternative(@Body() notifyData: any, @Req() req: Request) {
+  async alipayNotifyAlternative(@Body() notifyData: any, @Req() req: Request, @Res() res: Response) {
     this.logger.log('收到支付宝回调通知(兼容路径):', {
       headers: req.headers,
       body: notifyData,
@@ -71,20 +74,22 @@ export class PaymentsController {
       url: req.url,
       originalUrl: req.originalUrl
     });
-    
     // 合并请求体和查询参数，确保能处理GET和POST请求
     const combinedData = {
       ...req.query,
       ...notifyData
     };
-    
     try {
       const result = await this.paymentsService.handleAlipayNotification(combinedData);
       this.logger.log('支付宝回调处理结果:', result);
-      return result;
+      if (result.success) {
+        return res.send('success');
+      } else {
+        return res.send('fail');
+      }
     } catch (error) {
       this.logger.error('处理支付宝回调时出错:', error);
-      return { success: false, message: error.message };
+      return res.send('fail');
     }
   }
 

@@ -133,13 +133,10 @@ export class PaymentsService implements OnModuleInit {
     
     // 构建支付宝请求参数
     const alipayParams = {
-      outTradeNo: `ORDER_${order.id}`,
-      productCode: 'FAST_INSTANT_TRADE_PAY',
-      totalAmount: order.amount.toString(),
+      out_trade_no: `ORDER_${order.id}`,
+      total_amount: order.amount.toString(),
       subject: `AI灵感社 - ${product.title}`,
       body: product.description || '会员购买',
-      qr_pay_mode: '2',
-      qrcode_width: 200,
     };
     
     // 回调URL
@@ -164,28 +161,30 @@ export class PaymentsService implements OnModuleInit {
           signType: 'RSA2',
         });
         
-        const result = await tempSdk.exec('alipay.trade.page.pay', {
-          method: 'GET',
+        const result = await tempSdk.exec('alipay.trade.precreate', {
           bizContent: alipayParams,
-          returnUrl: returnUrl,
           notifyUrl: notifyUrl,
         });
-        
-        this.logger.log(`支付宝支付URL生成成功: ${result}`);
-        this.logger.log(`支付宝配置: 应用ID=${settings.alipayAppId}, 沙箱模式=${settings.isSandbox}, 回调URL=${notifyUrl}`);
-        
+        this.logger.log('支付宝SDK返回内容:', result);
+        const qrCode = result?.qrCode;
+        if (!qrCode) {
+          throw new BadRequestException('支付宝未返回二维码链接: ' + JSON.stringify(result));
+        }
+        this.logger.log(`支付宝二维码生成成功: ${qrCode}`);
         return {
           orderId: order.id,
-          paymentUrl: result,
+          qrCode: qrCode,
         };
       } catch (error) {
         this.logger.error(`创建支付宝支付失败: ${error.message}`, error.stack);
-        // 如果支付宝支付失败，回退到测试模式
       }
     }
     
     // 测试模式下返回模拟支付URL
     if (this.testMode || !this.alipaySdk) {
+      if (!this.testMode) {
+        throw new BadRequestException('支付宝SDK未初始化，无法创建支付订单');
+      }
       this.logger.log('使用测试模式创建订单');
       return {
         orderId: order.id,
@@ -195,19 +194,19 @@ export class PaymentsService implements OnModuleInit {
     
     // 使用环境变量配置的支付宝
     try {
-      const result = await this.alipaySdk.exec('alipay.trade.page.pay', {
-        method: 'GET',
+      const result = await this.alipaySdk.exec('alipay.trade.precreate', {
         bizContent: alipayParams,
-        returnUrl: returnUrl,
         notifyUrl: notifyUrl,
       });
-      
-      this.logger.log(`支付宝支付URL生成成功: ${result}`);
-      this.logger.log(`使用环境变量支付宝配置: 回调URL=${notifyUrl}`);
-
+      this.logger.log('支付宝SDK返回内容:', result);
+      const qrCode = result?.qrCode;
+      if (!qrCode) {
+        throw new BadRequestException('支付宝未返回二维码链接: ' + JSON.stringify(result));
+      }
+      this.logger.log(`支付宝二维码生成成功: ${qrCode}`);
       return {
         orderId: order.id,
-        paymentUrl: result,
+        qrCode: qrCode,
       };
     } catch (error) {
       this.logger.error(`创建支付失败: ${error.message}`, error.stack);

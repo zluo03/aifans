@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import dynamic from 'next/dynamic';
 const QrcodeWrapper = dynamic(() => import('@/components/ui/QrcodeWrapper'), { ssr: false });
-import axios from 'axios';
+import api from '@/lib/api/api';
 
 export default function MembershipPage() {
   const [products, setProducts] = useState<MembershipProduct[]>([]);
@@ -57,8 +57,8 @@ export default function MembershipPage() {
     setPayLoading(true);
     setPayStatus(null);
     try {
-      const res = await axios.post('/api/payments/create-order', { productId: product.id });
-      setPayQrUrl(res.data.paymentUrl);
+      const res = await api.post('/api/payments/create-order', { productId: product.id });
+      setPayQrUrl(res.data.qrCode);
       setPayOrderId(res.data.orderId);
       setPayDialogOpen(true);
       setPayPolling(true);
@@ -75,7 +75,7 @@ export default function MembershipPage() {
     if (payPolling && payOrderId) {
       const poll = async () => {
         try {
-          const res = await axios.get(`/api/payments/order-status/${payOrderId}`);
+          const res = await api.get(`/api/payments/order-status/${payOrderId}`);
           if (res.data.status === 'SUCCESS') {
             setPayStatus('SUCCESS');
             setPayPolling(false);
@@ -218,7 +218,7 @@ export default function MembershipPage() {
                   {membershipStatus.status}
                 </span>
               </div>
-              {user.role !== 'LIFETIME' && (
+              {user?.role !== 'LIFETIME' && (
                 <Link href="/profile/edit">
                   <Button variant="outline" size="sm">
                     使用兑换码
