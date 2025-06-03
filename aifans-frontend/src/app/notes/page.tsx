@@ -20,6 +20,7 @@ import { useAuthStore } from '@/lib/store/auth-store';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { MembershipExclusiveDialog } from '@/components/ui/membership-exclusive-dialog';
+import { AuthWrapper } from '@/components/auth-wrapper';
 
 // 游客访问限制组件
 function GuestAccessDenied() {
@@ -61,19 +62,21 @@ function NotesContent() {
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuthStore();
   
-  const pageParam = searchParams.get('page');
-  const queryParam = searchParams.get('query');
-  const categoryParam = searchParams.get('category');
-  const favoritedParam = searchParams.get('favorited');
-  const myNotesParam = searchParams.get('myNotes');
+  const pageParam = searchParams?.get('page');
+  const queryParam = searchParams?.get('query');
+  const categoryParam = searchParams?.get('category');
+  const favoritedParam = searchParams?.get('favorited');
+  const myNotesParam = searchParams?.get('myNotes');
 
   useEffect(() => {
-    setCurrentPage(pageParam ? parseInt(pageParam) : 1);
-    setSearchQuery(queryParam || '');
-    setSelectedCategory(categoryParam || '');
-    setShowFavorited(favoritedParam === 'true');
-    setShowMyNotes(myNotesParam === 'true');
-  }, [pageParam, queryParam, categoryParam, favoritedParam, myNotesParam]);
+    if (searchParams) {
+      setCurrentPage(pageParam ? parseInt(pageParam) : 1);
+      setSearchQuery(queryParam || '');
+      setSelectedCategory(categoryParam || '');
+      setShowFavorited(favoritedParam === 'true');
+      setShowMyNotes(myNotesParam === 'true');
+    }
+  }, [pageParam, queryParam, categoryParam, favoritedParam, myNotesParam, searchParams]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -159,7 +162,7 @@ function NotesContent() {
     setShowFavorited(checked);
     if (checked) setShowMyNotes(false); // 互斥
     
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('page', '1');
     if (checked) {
       params.set('favorited', 'true');
@@ -174,7 +177,7 @@ function NotesContent() {
     setShowMyNotes(checked);
     if (checked) setShowFavorited(false); // 互斥
     
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('page', '1');
     if (checked) {
       params.set('myNotes', 'true');
@@ -186,7 +189,7 @@ function NotesContent() {
   };
 
   const handlePageChange = (page: number) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('page', page.toString());
     router.push(`/notes?${params.toString()}`);
   };
@@ -202,10 +205,18 @@ function NotesContent() {
     router.push(`/notes/${noteId}`);
   };
 
-  // 检查访问权限
-  if (!isAuthenticated) {
-    return <GuestAccessDenied />;
-  }
+  const handleCategoryChange = (value: string) => {
+    setSelectedCategory(value);
+    
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    params.set('page', '1');
+    if (value && value !== 'all') {
+      params.set('category', value);
+    } else {
+      params.delete('category');
+    }
+    router.push(`/notes?${params.toString()}`);
+  };
 
   return (
     <>
@@ -315,31 +326,35 @@ function NotesContent() {
       `}</style>
       
       <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
-        {/* 头部区域 */}
         <div className="p-4 flex-shrink-0">
           <div className="max-w-7xl mx-auto">
-            {/* 筛选和搜索 */}
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-2xl font-bold">笔记</h1>
+              
+              {/* 分类选择器 */}
+              <Select
+                value={selectedCategory}
+                onValueChange={handleCategoryChange}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部分类</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
             <div className="mb-2">
-              <form onSubmit={handleSearch} className="flex flex-col md:flex-row gap-4">
-                <Select
-                  value={selectedCategory}
-                  onValueChange={setSelectedCategory}
-                >
-                  <SelectTrigger className="w-full md:w-48">
-                    <SelectValue placeholder="全部分类" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部分类</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id.toString()}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <div className="flex flex-1 gap-2">
+              <form onSubmit={handleSearch}>
+                <div className="flex flex-wrap gap-2">
                   <Input
+                    type="text"
                     placeholder="搜索笔记..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -516,10 +531,10 @@ function NotesContent() {
   );
 }
 
-// 主页组件
-export default function NotesPage() {
+// 自定义加载组件
+function NotesLoadingSkeleton() {
   return (
-    <Suspense fallback={<div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
       <div className="p-4 flex-shrink-0">
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center mb-6">
@@ -538,8 +553,20 @@ export default function NotesPage() {
           </div>
         </div>
       </div>
-    </div>}>
-      <NotesContent />
+    </div>
+  );
+}
+
+// 主页组件
+export default function NotesPage() {
+  return (
+    <Suspense fallback={<NotesLoadingSkeleton />}>
+      <AuthWrapper 
+        loadingFallback={<NotesLoadingSkeleton />}
+        showToast={false}
+      >
+        <NotesContent />
+      </AuthWrapper>
     </Suspense>
   );
 } 

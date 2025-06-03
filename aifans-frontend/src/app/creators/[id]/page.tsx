@@ -8,6 +8,8 @@ import { useAuthStore } from '@/lib/store/auth-store';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { parseCreatorData } from '@/lib/utils/json-parser';
+import { AuthWrapper } from '@/components/auth-wrapper';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Creator {
   id: number;
@@ -28,7 +30,43 @@ interface Creator {
   };
 }
 
-export default function CreatorDetailPage() {
+// 创作者详情加载状态
+function CreatorDetailSkeleton() {
+  return (
+    <div className="flex flex-col h-[calc(100vh-168px)] max-h-[calc(100vh-168px)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto content-scrollbar">
+        <div className="w-full">
+          {/* 背景横幅 */}
+          <div className="relative">
+            <Skeleton className="w-full h-64" />
+            <div className="absolute -bottom-16 left-10 z-10">
+              <Skeleton className="w-32 h-32 rounded-full" />
+            </div>
+          </div>
+          
+          {/* 个人信息 */}
+          <div className="mt-20 px-10">
+            <Skeleton className="h-8 w-48 mb-3" />
+            <Skeleton className="h-5 w-64 mb-6" />
+            
+            {/* 作品区域 */}
+            <div className="mt-6">
+              <Skeleton className="h-10 w-full mb-4" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-48 w-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 创作者详情内容组件
+function CreatorDetailContent() {
   const { user } = useAuthStore();
   const router = useRouter();
   const params = useParams();
@@ -93,24 +131,10 @@ export default function CreatorDetailPage() {
   };
 
   useEffect(() => {
-    // 未登录用户不能访问
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-
     if (userId) {
       fetchCreator();
     }
-  }, [userId, user, router]);
-
-  if (!user) return null;
-
-  // 只有高级/永久会员和管理员可以发送私信
-  const canMessage = user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN';
-  
-  // 是否是自己的主页
-  const isSelf = creator && user.id === creator.userId;
+  }, [userId]);
 
   if (loading) {
     return (
@@ -123,6 +147,12 @@ export default function CreatorDetailPage() {
   if (!creator) {
     return null;
   }
+
+  // 只有高级/永久会员和管理员可以发送私信
+  const canMessage = user && (user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN');
+  
+  // 是否是自己的主页
+  const isSelf = creator && user && user.id === creator.userId;
 
   return (
     <div className="flex flex-col h-[calc(100vh-168px)] max-h-[calc(100vh-168px)] overflow-hidden">
@@ -145,5 +175,17 @@ export default function CreatorDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 创作者详情页面组件
+export default function CreatorDetailPage() {
+  return (
+    <AuthWrapper
+      showToast={false}
+      loadingFallback={<CreatorDetailSkeleton />}
+    >
+      <CreatorDetailContent />
+    </AuthWrapper>
   );
 } 

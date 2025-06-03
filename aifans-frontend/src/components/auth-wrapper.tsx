@@ -50,6 +50,19 @@ export function AuthWrapper({
   const { user, isAuthenticated, isLoading, isInitialized } = useAuthStore();
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+
+  // 检测页面是否正在加载中
+  useEffect(() => {
+    // 页面加载完成后设置isPageLoading为false
+    if (document.readyState === 'complete') {
+      setIsPageLoading(false);
+    } else {
+      const handleLoad = () => setIsPageLoading(false);
+      window.addEventListener('load', handleLoad);
+      return () => window.removeEventListener('load', handleLoad);
+    }
+  }, []);
 
   useEffect(() => {
     // 如果认证状态还未初始化或正在加载中，不做任何处理
@@ -59,9 +72,18 @@ export function AuthWrapper({
 
     // 如果需要登录但未登录
     if (!isAuthenticated) {
-      if (showToast) {
+      // 保存当前URL，以便登录后返回
+      if (typeof window !== 'undefined') {
+        const currentPath = window.location.pathname + window.location.search;
+        sessionStorage.setItem('redirectAfterLogin', currentPath);
+      }
+      
+      // 只有在页面完全加载后，且用户明确操作时才显示提示
+      // 避免在页面刷新或初始加载时显示提示
+      if (showToast && !isPageLoading) {
         toast.error('请先登录');
       }
+      
       router.push(redirectTo);
       return;
     }
@@ -80,7 +102,7 @@ export function AuthWrapper({
 
       // 如果用户角色等级不够
       if (userRoleLevel < requiredRoleLevel) {
-        if (showToast) {
+        if (showToast && !isPageLoading) {
           toast.error('权限不足，请升级会员');
         }
         router.push('/membership');
@@ -90,7 +112,7 @@ export function AuthWrapper({
 
     // 通过所有权限检查
     setIsAuthorized(true);
-  }, [isInitialized, isLoading, isAuthenticated, user, requiredRole, router, redirectTo, showToast]);
+  }, [isInitialized, isLoading, isAuthenticated, user, requiredRole, router, redirectTo, showToast, isPageLoading]);
 
   // 如果认证状态还未初始化或正在加载中
   if (!isInitialized || isLoading) {

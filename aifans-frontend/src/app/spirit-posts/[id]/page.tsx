@@ -26,8 +26,35 @@ import { zhCN } from 'date-fns/locale';
 import { EditSpiritPostDialog } from '../components/edit-spirit-post-dialog';
 import { MarkCompletedDialog } from '../components/mark-completed-dialog';
 import { useSpiritPostsStore } from '@/lib/store/spirit-posts-store';
+import { AuthWrapper } from '@/components/auth-wrapper';
+import { Skeleton } from '@/components/ui/skeleton';
 
-export default function SpiritPostDetailPage() {
+// 灵贴详情加载状态
+function SpiritPostDetailSkeleton() {
+  return (
+    <div className="container mx-auto py-8">
+      <Skeleton className="h-10 w-32 mb-6" />
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-8 w-2/3 mb-4" />
+          <div className="flex gap-4">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-6 w-40" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-6 w-full mb-3" />
+          <Skeleton className="h-6 w-5/6 mb-3" />
+          <Skeleton className="h-6 w-4/6 mb-3" />
+          <Skeleton className="h-10 w-full mt-6" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// 灵贴详情内容组件
+function SpiritPostDetailContent() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuthStore();
@@ -43,15 +70,9 @@ export default function SpiritPostDetailPage() {
   const [showMarkCompletedDialog, setShowMarkCompletedDialog] = useState(false);
   const { fetchUnreadCount } = useSpiritPostsStore();
 
-  // 检查用户权限
+  // 用户权限检查，改为在AuthWrapper中处理
   useEffect(() => {
-    if (!user) {
-      toast.error('请先登录');
-      router.push('/login');  // 登录页面路径
-      return;
-    }
-
-    if (user.role === 'NORMAL') {
+    if (user && user.role === 'NORMAL') {
       toast.error('普通用户无法查看灵贴详情');
       router.push('/spirit-posts');
       return;
@@ -331,160 +352,186 @@ export default function SpiritPostDetailPage() {
 
           {/* 消息区域 */}
           {(post.isClaimed || post.isOwner) && messages && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  对话消息
-                </CardTitle>
-              </CardHeader>
+            <div className="bg-white rounded-xl border p-4">
+              <h2 className="text-xl font-bold mb-4">消息</h2>
               
-              <CardContent>
-                {messages.isOwner && messages.conversations ? (
-                  // 发布者视图：多个对话标签
-                  <Tabs
-                    value={selectedConversationUserId?.toString()}
-                    onValueChange={(value) => setSelectedConversationUserId(Number(value))}
-                  >
-                    <TabsList className="mb-4 flex-wrap h-auto">
-                      {messages.conversations.map((conv) => (
-                        <TabsTrigger key={conv.user.id} value={conv.user.id.toString()}>
-                          <Avatar className="h-5 w-5 mr-2">
-                            <AvatarImage src={conv.user.avatarUrl || undefined} />
-                            <AvatarFallback>
-                              {(conv.user.nickname || conv.user.username)[0].toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          {conv.user.nickname || conv.user.username}
-                          {conv.hasConversation && (
-                            <Badge variant="secondary" className="ml-2 h-4 px-1 text-xs">
-                              可认领
-                            </Badge>
-                          )}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                    
-                    {messages.conversations.map((conv) => (
-                      <TabsContent key={conv.user.id} value={conv.user.id.toString()}>
-                        <div className="min-h-[200px] max-h-[600px] overflow-y-auto mb-4 p-4 border rounded-lg bg-muted/10 message-container">
-                          {conv.messages.length === 0 ? (
-                            <div className="text-center text-muted-foreground py-8">
-                              暂无消息
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {conv.messages.map((msg) => (
-                                <div
-                                  key={msg.id}
-                                  className={`flex ${
-                                    msg.senderId === user?.id ? 'justify-end' : 'justify-start'
-                                  }`}
-                                >
-                                  <div
-                                    className={`max-w-[70%] rounded-lg p-3 ${
-                                      msg.senderId === user?.id
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted'
-                                    }`}
-                                  >
-                                    <p className="text-sm">{msg.content}</p>
-                                    <p className="text-xs opacity-70 mt-1">
-                                      {format(new Date(msg.createdAt), 'HH:mm')}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </TabsContent>
+              {post.isOwner && messages.conversations && messages.conversations.length > 0 ? (
+                <Tabs defaultValue={messages.conversations[0].user.id.toString()} className="w-full">
+                  <TabsList className="mb-4">
+                    {messages.conversations.map(conversation => (
+                      <TabsTrigger
+                        key={conversation.user.id}
+                        value={conversation.user.id.toString()}
+                        onClick={() => setSelectedConversationUserId(conversation.user.id)}
+                        className="relative"
+                      >
+                        {conversation.user.nickname || conversation.user.username}
+                        {conversation.unreadCount > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                            {conversation.unreadCount}
+                          </span>
+                        )}
+                      </TabsTrigger>
                     ))}
-                  </Tabs>
-                ) : (
-                  // 认领者视图：单个对话
-                  <div className="min-h-[200px] max-h-[600px] overflow-y-auto mb-4 p-4 border rounded-lg bg-muted/10 message-container">
-                    {messages.messages && messages.messages.length === 0 ? (
-                      <div className="text-center text-muted-foreground py-8">
-                        暂无消息，发送第一条消息开始对话
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {messages.messages?.map((msg) => (
-                          <div
-                            key={msg.id}
-                            className={`flex ${
-                              msg.senderId === user?.id ? 'justify-end' : 'justify-start'
-                            }`}
-                          >
+                  </TabsList>
+                  
+                  {messages.conversations.map(conversation => (
+                    <TabsContent
+                      key={conversation.user.id}
+                      value={conversation.user.id.toString()}
+                      className="space-y-4"
+                    >
+                      {conversation.messages.length === 0 ? (
+                        <div className="text-center py-6 text-gray-500">
+                          暂无消息记录
+                        </div>
+                      ) : (
+                        <div className="message-container max-h-[400px] overflow-y-auto p-2">
+                          {conversation.messages.map(message => (
                             <div
-                              className={`max-w-[70%] rounded-lg p-3 ${
-                                msg.senderId === user?.id
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'bg-muted'
+                              key={message.id}
+                              className={`mb-3 p-3 rounded-lg ${
+                                message.senderId === user?.id
+                                  ? 'bg-blue-50 ml-auto max-w-[80%]'
+                                  : 'bg-gray-50 mr-auto max-w-[80%]'
                               }`}
                             >
-                              <p className="text-sm">{msg.content}</p>
-                              <p className="text-xs opacity-70 mt-1">
-                                {format(new Date(msg.createdAt), 'HH:mm')}
-                              </p>
+                              <div className="flex items-center gap-2 mb-1">
+                                <Avatar className="h-5 w-5">
+                                  <AvatarImage src={message.sender.avatarUrl || undefined} />
+                                  <AvatarFallback>
+                                    {(message.sender.nickname || message.sender.username)[0].toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="text-xs text-gray-500">
+                                  {message.sender.nickname || message.sender.username}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                  {format(new Date(message.createdAt), 'MM-dd HH:mm')}
+                                </span>
+                              </div>
+                              <div className="whitespace-pre-wrap text-sm">{message.content}</div>
                             </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2 mt-4">
+                        <Textarea
+                          value={messageContent}
+                          onChange={(e) => setMessageContent(e.target.value)}
+                          placeholder="输入回复消息..."
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={handleSendMessage}
+                          disabled={sendingMessage || !messageContent.trim()}
+                        >
+                          <Send className="h-4 w-4 mr-2" />
+                          发送
+                        </Button>
+                      </div>
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              ) : post.isClaimed ? (
+                <>
+                  <div className="message-container max-h-[400px] overflow-y-auto p-2">
+                    {messages.messages.length === 0 ? (
+                      <div className="text-center py-6 text-gray-500">
+                        暂无消息记录，你可以向发布者发送消息
+                      </div>
+                    ) : (
+                      <>
+                        {messages.messages.map(message => (
+                          <div
+                            key={message.id}
+                            className={`mb-3 p-3 rounded-lg ${
+                              message.senderId === user?.id
+                                ? 'bg-blue-50 ml-auto max-w-[80%]'
+                                : 'bg-gray-50 mr-auto max-w-[80%]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <Avatar className="h-5 w-5">
+                                <AvatarImage src={message.sender.avatarUrl || undefined} />
+                                <AvatarFallback>
+                                  {(message.sender.nickname || message.sender.username)[0].toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs text-gray-500">
+                                {message.sender.nickname || message.sender.username}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                {format(new Date(message.createdAt), 'MM-dd HH:mm')}
+                              </span>
+                            </div>
+                            <div className="whitespace-pre-wrap text-sm">{message.content}</div>
                           </div>
                         ))}
-                      </div>
+                      </>
                     )}
                   </div>
-                )}
-                
-                {/* 发送消息区域 */}
-                <div className="flex gap-2">
-                  <Textarea
-                    placeholder="输入消息..."
-                    value={messageContent}
-                    onChange={(e) => setMessageContent(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    rows={2}
-                    className="resize-none"
-                    disabled={sendingMessage}
-                  />
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={sendingMessage || !messageContent.trim()}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  
+                  <div className="flex gap-2 mt-4">
+                    <Textarea
+                      value={messageContent}
+                      onChange={(e) => setMessageContent(e.target.value)}
+                      placeholder="输入消息..."
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={sendingMessage || !messageContent.trim()}
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      发送
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6 text-gray-500">
+                  暂无消息
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* 编辑对话框 */}
-          {showEditDialog && (
-            <EditSpiritPostDialog
-              open={showEditDialog}
-              onOpenChange={setShowEditDialog}
-              post={post}
-              onSuccess={handleUpdateSuccess}
-            />
-          )}
-
-          {/* 标记已认领对话框 */}
-          {showMarkCompletedDialog && messages?.conversations && (
-            <MarkCompletedDialog
-              open={showMarkCompletedDialog}
-              onOpenChange={setShowMarkCompletedDialog}
-              postId={postId}
-              conversations={messages.conversations.filter(c => c.hasConversation)}
-              onSuccess={handleMarkCompletedSuccess}
-            />
+              )}
+            </div>
           )}
         </div>
       </div>
+      
+      {/* 编辑灵贴对话框 */}
+      {showEditDialog && (
+        <EditSpiritPostDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          post={post}
+          onSuccess={handleUpdateSuccess}
+        />
+      )}
+      
+      {/* 标记已认领对话框 */}
+      {showMarkCompletedDialog && messages && (
+        <MarkCompletedDialog
+          open={showMarkCompletedDialog}
+          onOpenChange={setShowMarkCompletedDialog}
+          postId={postId}
+          conversations={messages.conversations}
+          onSuccess={handleMarkCompletedSuccess}
+        />
+      )}
     </>
+  );
+}
+
+// 主页面组件
+export default function SpiritPostDetailPage() {
+  return (
+    <AuthWrapper
+      requiredRole="PREMIUM"
+      showToast={false}
+      loadingFallback={<SpiritPostDetailSkeleton />}
+    >
+      <SpiritPostDetailContent />
+    </AuthWrapper>
   );
 } 

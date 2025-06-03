@@ -13,6 +13,7 @@ import { MembershipExclusiveDialog } from '@/components/ui/membership-exclusive-
 import { usePermissions } from '@/hooks/use-permissions';
 import { useSpiritPostsStore } from '@/lib/store/spirit-posts-store';
 import Link from 'next/link';
+import { AuthWrapper } from '@/components/auth-wrapper';
 
 type FilterType = 'all' | 'my-posts' | 'my-claims';
 
@@ -39,7 +40,21 @@ function GuestAccessDenied() {
   );
 }
 
-export default function SpiritPostsPage() {
+// 加载状态组件
+function SpiritPostsLoadingSkeleton() {
+  return (
+    <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto content-scrollbar mt-[110px]">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-xl">加载中...</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 灵贴内容组件
+function SpiritPostsContent() {
   const [posts, setPosts] = useState<SpiritPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -100,11 +115,6 @@ export default function SpiritPostsPage() {
   // 检查是否可以创建灵贴
   const canCreatePost = permissions.canCreateSpiritPost();
 
-  // 检查访问权限
-  if (!isAuthenticated || !user) {
-    return <GuestAccessDenied />;
-  }
-
   // 生成随机位置和旋转角度
   const getRandomStyle = (index: number) => {
     // 计算网格位置
@@ -127,19 +137,19 @@ export default function SpiritPostsPage() {
     // 随机旋转角度
     const rotation = (Math.random() - 0.5) * 12; // -6deg to 6deg
     
-    // 便签纸颜色
+    // 便签纸颜色类名
     const colors = [
-      'bg-yellow-200', // 黄色
-      'bg-pink-200',   // 粉红色
-      'bg-blue-200',   // 粉蓝色
+      'sticky-note-yellow', // 黄色
+      'sticky-note-pink',   // 粉红色
+      'sticky-note-blue',   // 粉蓝色
     ];
-    const color = colors[index % colors.length];
+    const colorClass = colors[index % colors.length];
 
     return {
       left: `${x}%`,
       top: `${y}%`,
       transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-      backgroundColor: color,
+      colorClass: colorClass
     };
   };
 
@@ -261,7 +271,7 @@ export default function SpiritPostsPage() {
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
       `}</style>
-
+      
       {/* 固定工具栏 */}
       <div className="toolbar">
         <div className="container mx-auto flex items-center justify-end gap-4">
@@ -355,15 +365,13 @@ export default function SpiritPostsPage() {
         ) : (
           <div className="spirit-posts-wrapper">
             {posts.map((post, index) => {
+              // 获取样式
               const style = getRandomStyle(index);
-              const colorClass = style.backgroundColor === 'bg-yellow-200' ? 'sticky-note-yellow' :
-                               style.backgroundColor === 'bg-pink-200' ? 'sticky-note-pink' :
-                               'sticky-note-blue';
               
               return (
                 <div
                   key={post.id}
-                  className={`sticky-note ${colorClass}`}
+                  className={`sticky-note ${style.colorClass} ${post.isOwner ? 'ring-2 ring-blue-400' : ''}`}
                   style={{
                     left: style.left,
                     top: style.top,
@@ -371,27 +379,22 @@ export default function SpiritPostsPage() {
                   }}
                   onClick={() => handlePostClick(post.id)}
                 >
-                  {/* 未读消息提示 */}
-                  {post.unreadCount > 0 && (
-                    <div className="unread-badge">{post.unreadCount}</div>
-                  )}
+                  <h2 className="text-lg font-bold mb-2 line-clamp-2">{post.title}</h2>
+                  <p className="text-sm text-gray-600 line-clamp-4 mb-3">{post.content}</p>
                   
-                  <h3 className="text-lg font-bold mb-2 text-gray-800 line-clamp-2">
-                    {post.title}
-                  </h3>
-                  
-                  <div className="absolute bottom-4 left-4 right-4">
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span className="truncate">{post.user.nickname || post.user.username}</span>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        <span>{new Date(post.createdAt).toLocaleDateString('zh-CN')}</span>
-                      </div>
+                  <div className="flex justify-between items-end text-xs mt-auto">
+                    <div className="flex items-center text-gray-500">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      {new Date(post.createdAt).toLocaleDateString('zh-CN', {
+                        month: 'numeric',
+                        day: 'numeric'
+                      })}
                     </div>
-                    {post._count && post._count.claims > 0 && (
-                      <div className="mt-1 text-xs text-gray-500">
-                        <span>{post._count.claims} 人认领中</span>
-                      </div>
+                    
+                    {(post.unreadCount && post.unreadCount > 0) && (
+                      <Badge className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {post.unreadCount > 99 ? '99+' : post.unreadCount}
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -400,16 +403,32 @@ export default function SpiritPostsPage() {
           </div>
         )}
       </div>
-
-      {showCreateDialog && (
-        <CreateSpiritPostDialog
-          open={showCreateDialog}
-          onOpenChange={setShowCreateDialog}
-          onSuccess={handleCreateSuccess}
-        />
-      )}
-
-      <MembershipExclusiveDialog open={showMemberDialog} onOpenChange={setShowMemberDialog} />
+      
+      {/* 创建灵贴对话框 */}
+      <CreateSpiritPostDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onSuccess={handleCreateSuccess}
+      />
+      
+      {/* 会员专属功能对话框 */}
+      <MembershipExclusiveDialog
+        open={showMemberDialog}
+        onOpenChange={setShowMemberDialog}
+        feature="灵贴认领功能"
+      />
     </>
+  );
+}
+
+// 主页面组件
+export default function SpiritPostsPage() {
+  return (
+    <AuthWrapper
+      showToast={false}
+      loadingFallback={<SpiritPostsLoadingSkeleton />}
+    >
+      <SpiritPostsContent />
+    </AuthWrapper>
   );
 } 

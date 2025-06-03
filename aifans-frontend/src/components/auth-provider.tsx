@@ -29,6 +29,11 @@ declare global {
       status: string;
       timestamp: number;
     }>;
+    'auth-error': CustomEvent<{
+      status: number;
+      message: string;
+      timestamp: number;
+    }>;
   }
 }
 
@@ -135,6 +140,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }, 100); // 延迟100ms
     };
 
+    // 监听认证错误事件
+    const handleAuthError = async (event: CustomEvent<{status: number; message: string}>) => {
+      const { status, message } = event.detail;
+      const currentUser = useAuthStore.getState().user;
+      
+      // 如果当前有用户登录，尝试刷新用户资料
+      if (currentUser) {
+        try {
+          // 尝试刷新用户资料
+          const refreshSuccess = await useAuthStore.getState().forceRefreshUserProfile();
+          
+          if (!refreshSuccess) {
+            // 如果刷新失败，且不是在页面加载过程中，才清除认证状态
+            // 这里我们检查页面是否已完全加载，避免在初始加载时显示错误提示
+            if (document.readyState === 'complete') {
+              // 静默清除认证状态，不显示错误提示
+              useAuthStore.getState().logout();
+              
+              // 如果当前不在登录页面，才重定向到登录页
+              if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+                // 保存当前URL，以便登录后返回
+                const currentPath = window.location.pathname + window.location.search;
+                sessionStorage.setItem('redirectAfterLogin', currentPath);
+                
+                // 重定向到登录页
+                window.location.href = '/login';
+              }
+            }
+          }
+        } catch (error) {
+          // 处理错误
+        }
+      }
+    };
+
     // 注释掉storage监听，避免多标签页同步登录状态
     // const handleStorageChange = async (e: StorageEvent) => {
     //   if (e.key === 'auth-storage') {
@@ -203,6 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // 添加事件监听器
     window.addEventListener('auth-state-changed', handleAuthStateChange as EventListener);
+    window.addEventListener('auth-error', handleAuthError as EventListener);
     // window.addEventListener('storage', handleStorageChange); // 移除storage监听
     window.addEventListener('user-role-updated', handleUserRoleUpdate as EventListener);
     window.addEventListener('user-status-updated', handleUserStatusUpdate as EventListener);
@@ -210,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 清理事件监听器
     return () => {
       window.removeEventListener('auth-state-changed', handleAuthStateChange as EventListener);
+      window.removeEventListener('auth-error', handleAuthError as EventListener);
       // window.removeEventListener('storage', handleStorageChange); // 移除storage监听
       window.removeEventListener('user-role-updated', handleUserRoleUpdate as EventListener);
       window.removeEventListener('user-status-updated', handleUserStatusUpdate as EventListener);

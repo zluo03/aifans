@@ -1,18 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog/dialog';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 
 interface WechatLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  qrCodeUrl: string;
 }
 
-export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatLoginModalProps) {
+export default function WechatLoginModal({ isOpen, onClose }: WechatLoginModalProps) {
+  const router = useRouter();
   const [verificationCode, setVerificationCode] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState('/icon/wechatlogin.png');
+  
+  // 获取微信登录URL
+  useEffect(() => {
+    if (isOpen) {
+      const fetchLoginUrl = async () => {
+        try {
+          const response = await fetch('/api/auth/wechat/login-url');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.qrCodeUrl) {
+              setQrCodeUrl(data.qrCodeUrl);
+            }
+          }
+        } catch (error) {
+          // 使用默认二维码
+        }
+      };
+      
+      fetchLoginUrl();
+    }
+  }, [isOpen]);
 
   const handleVerifyCode = async () => {
     if (!verificationCode) {
@@ -22,8 +45,6 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
 
     setIsVerifying(true);
     try {
-      console.log('发送验证请求...');
-      
       const response = await fetch('/api/auth/wechat/verify-code', {
         method: 'POST',
         headers: {
@@ -31,16 +52,12 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
         },
         body: JSON.stringify({ code: verificationCode })
       });
-
-      console.log('收到响应:', response.status);
       
       if (!response.ok) {
-        console.error('验证请求返回错误状态码:', response.status);
         if (response.status === 404) {
           toast.error('验证接口不存在，请检查服务器配置');
         } else {
           const errorText = await response.text().catch(() => '未知错误');
-          console.error('错误详情:', errorText);
           toast.error('验证失败，请重试');
         }
         setIsVerifying(false);
@@ -48,16 +65,9 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
       }
       
       const data = await response.json();
-      console.log('响应数据:', data);
       
       if (data.success) {
         if (data.token) {
-          console.log('验证成功，准备保存token:', {
-            tokenLength: data.token.length,
-            tokenPrefix: data.token.substring(0, 10) + '...',
-            userData: data.user
-          });
-          
           // 先清除可能存在的旧token
           localStorage.removeItem('token');
           localStorage.removeItem('auth-storage');
@@ -69,7 +79,6 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
           // 确保用户头像处理
           if (data.user && !data.user.avatarUrl && data.user.wechatAvatar) {
             data.user.avatarUrl = data.user.wechatAvatar;
-            console.log('用户没有头像，使用微信头像');
           }
           
           // 创建完整的auth-storage对象
@@ -89,7 +98,6 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
           
           // 触发认证状态变更事件
           if (typeof window !== 'undefined') {
-            console.log('触发auth-state-changed事件');
             window.dispatchEvent(new Event('auth-state-changed'));
           }
           
@@ -99,22 +107,25 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
           // 关闭对话框
           onClose();
           
+          // 检查是否有登录后的重定向路径
+          const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+          
           // 延迟跳转，确保状态更新
-          console.log('准备跳转到首页...');
           setTimeout(() => {
-            console.log('执行跳转');
-            window.location.href = '/';
-          }, 1000);
+            if (redirectPath) {
+              sessionStorage.removeItem('redirectAfterLogin');
+              window.location.href = redirectPath;
+            } else {
+              window.location.href = '/';
+            }
+          }, 500);
         } else {
-          console.error('登录成功但未收到token');
           toast.error('登录成功但未收到token，请联系管理员');
         }
       } else {
-        console.error('验证失败:', data.message);
         toast.error(data.message || '验证失败，请重试');
       }
     } catch (error) {
-      console.error('验证请求失败:', error);
       toast.error('网络请求失败，请重试');
     } finally {
       setIsVerifying(false);
@@ -132,13 +143,13 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
         </DialogHeader>
         <div className="flex flex-col items-center space-y-4">
           <div className="relative w-64 h-64">
-                <Image
+            <Image
               src={qrCodeUrl}
-                      alt="微信二维码"
-                      fill
-                      className="object-contain"
-                    />
-                  </div>
+              alt="微信二维码"
+              fill
+              className="object-contain"
+            />
+          </div>
           <div className="w-full space-y-2">
             <input
               type="text"
@@ -155,7 +166,7 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
             />
             <p className="text-sm text-gray-500">
               验证码5分钟内有效，可发送"登录"获取新验证码
-                </p>
+            </p>
           </div>
         </div>
         <DialogFooter className="flex space-x-2 sm:justify-center">
@@ -164,8 +175,8 @@ export default function WechatLoginModal({ isOpen, onClose, qrCodeUrl }: WechatL
             variant="outline"
             onClick={onClose}
           >
-                取消
-              </Button>
+            取消
+          </Button>
           <Button
             type="button"
             onClick={handleVerifyCode}

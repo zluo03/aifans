@@ -66,12 +66,19 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      // 清除本地存储的认证信息
+      // 触发自定义事件，由auth-provider处理认证失败
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth-storage');
+        // 创建自定义事件，带上错误信息
+        const authErrorEvent = new CustomEvent('auth-error', {
+          detail: {
+            status: error.response.status,
+            message: error.response.data?.message || '认证失败',
+            timestamp: Date.now()
+          }
+        });
         
-        // 可以选择重定向到登录页面
-        window.location.href = '/login';
+        // 分发事件
+        window.dispatchEvent(authErrorEvent);
       }
     }
     return Promise.reject(error);

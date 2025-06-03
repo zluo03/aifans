@@ -9,9 +9,10 @@ import Link from 'next/link';
 interface MembershipExclusiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  feature?: string;
 }
 
-export function MembershipExclusiveDialog({ open, onOpenChange }: MembershipExclusiveDialogProps) {
+export function MembershipExclusiveDialog({ open, onOpenChange, feature }: MembershipExclusiveDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -22,6 +23,11 @@ export function MembershipExclusiveDialog({ open, onOpenChange }: MembershipExcl
           </div>
         </DialogHeader>
         <div className="space-y-3 py-2 text-base">
+          {feature && (
+            <p className="font-medium mb-2">
+              {feature}需要升级为高级会员才能使用
+            </p>
+          )}
           <ul className="list-disc pl-5 space-y-1">
             <li>会员可以分享灵感，下载优秀灵感作品，复制提示词；</li>
             <li>通过丰富的笔记学习各种AI技巧与工具使用；</li>

@@ -10,6 +10,8 @@ import { Search, User, Lock } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { AuthWrapper } from '@/components/auth-wrapper';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // 游客访问限制组件
 function GuestAccessDenied() {
@@ -34,23 +36,67 @@ function GuestAccessDenied() {
   );
 }
 
-interface Creator {
-  id: number;
-  userId: number;
-  avatarUrl: string | null;
-  nickname: string;
-  bio: string | null;
-  expertise: string | null;
-  score: number;
-  images: any[];
-  videos: any[];
-  audios: any[];
-  createdAt: string;
-  updatedAt: string;
+// 创作者卡片加载状态
+function CreatorCardSkeleton() {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-full">
+      <div className="flex items-center space-x-4 mb-4">
+        <Skeleton className="w-16 h-16 rounded-full" />
+        <div className="flex-1">
+          <Skeleton className="h-5 w-24 mb-2" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+      <Skeleton className="h-12 w-full mb-4" />
+      <div className="mt-4 pt-4 border-t border-gray-50">
+        <div className="flex justify-between">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-12" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export default function CreatorsPage() {
-  const { user, isAuthenticated } = useAuthStore();
+// 创作者列表加载状态
+function CreatorsLoadingSkeleton() {
+  return (
+    <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto content-scrollbar">
+        <div className="w-full px-4 py-6">
+          <div className="max-w-7xl mx-auto">
+            {/* 页面头部 */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between gap-6 mb-6">
+                <div className="flex-shrink-0">
+                  <Skeleton className="h-8 w-32 mb-2" />
+                  <Skeleton className="h-4 w-48" />
+                </div>
+                <div className="flex-1 max-w-4xl">
+                  <Skeleton className="h-10 w-full mx-auto" />
+                </div>
+                <div className="flex-shrink-0">
+                  <Skeleton className="h-10 w-32" />
+                </div>
+              </div>
+            </div>
+            
+            {/* 创作者列表 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <CreatorCardSkeleton key={i} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 创作者内容组件
+function CreatorsContent() {
+  const { user } = useAuthStore();
   const router = useRouter();
   const [creators, setCreators] = useState<Creator[]>([]);
   const [allCreators, setAllCreators] = useState<Creator[]>([]);
@@ -59,10 +105,6 @@ export default function CreatorsPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    // 确保用户已登录
-    if (!user) {
-      return;
-    }
     // 获取创作者列表
     const fetchCreators = async () => {
       try {
@@ -81,9 +123,10 @@ export default function CreatorsPage() {
         setLoading(false);
       }
     };
+    
     // 检查当前用户是否已有个人主页
     const checkOwnProfile = async () => {
-      if (user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN') {
+      if (user && (user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN')) {
         try {
           const response = await fetch(`/api/creators/user/${user.id}`);
           const text = await response.text();
@@ -106,9 +149,10 @@ export default function CreatorsPage() {
         }
       }
     };
+    
     fetchCreators();
     checkOwnProfile();
-  }, [user, router]);
+  }, [user]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -128,13 +172,7 @@ export default function CreatorsPage() {
     // 搜索逻辑已在useEffect中处理
   };
 
-  // hooks之后再条件return
-  if (!isAuthenticated) {
-    return <GuestAccessDenied />;
-  }
-  if (!user) return null;
-
-  const canCreateProfile = user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN';
+  const canCreateProfile = user && (user.role === 'PREMIUM' || user.role === 'LIFETIME' || user.role === 'ADMIN');
 
   return (
     <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
@@ -178,24 +216,12 @@ export default function CreatorsPage() {
                 )}
               </div>
             </div>
-
-            {/* 内容区域 */}
+            
+            {/* 创作者列表 */}
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-pulse">
-                    <div className="flex items-center space-x-4 mb-4">
-                      <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
-                      <div className="flex-1">
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-3 bg-gray-200 rounded"></div>
-                      <div className="h-3 bg-gray-200 rounded w-5/6"></div>
-                    </div>
-                  </div>
+                  <CreatorCardSkeleton key={i} />
                 ))}
               </div>
             ) : creators.length === 0 ? (
@@ -230,5 +256,17 @@ export default function CreatorsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 主页组件
+export default function CreatorsPage() {
+  return (
+    <AuthWrapper
+      showToast={false}
+      loadingFallback={<CreatorsLoadingSkeleton />}
+    >
+      <CreatorsContent />
+    </AuthWrapper>
   );
 } 

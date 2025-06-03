@@ -8,6 +8,9 @@ import { useAuthStore } from '@/lib/store/auth-store';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import WechatLoginModal from './components/WechatLoginModal';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { EyeIcon, EyeOffIcon } from 'lucide-react';
 
 interface LoginForm {
   login: string;
@@ -16,8 +19,10 @@ interface LoginForm {
 }
 
 interface CaptchaData {
-  captchaId: string;
-  image: string;
+  id?: string;
+  captchaId?: string;
+  image?: string;
+  imageUrl?: string;
 }
 
 export default function LoginPage() {
@@ -39,8 +44,14 @@ export default function LoginPage() {
   // 检查是否已登录，如果已登录则重定向
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log('用户已登录，重定向到首页');
-      router.replace('/');
+      // 检查是否有登录后的重定向路径
+      const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectPath) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        router.replace(redirectPath);
+      } else {
+        router.replace('/');
+      }
     }
   }, [isAuthenticated, user, router]);
 
@@ -48,9 +59,23 @@ export default function LoginPage() {
   const loadCaptcha = async () => {
     setIsLoadingCaptcha(true);
     try {
-      const response = await fetch('/api/auth/captcha');
+      const response = await fetch('/api/auth/captcha', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       const data = await response.json();
-      setCaptchaData(data);
+      console.log('获取验证码成功:', data);
+      
+      // 处理API返回的数据
+      setCaptchaData({
+        id: data.id || data.captchaId,
+        captchaId: data.captchaId,
+        image: data.image,
+        imageUrl: data.imageUrl
+      });
       setValue('captcha', ''); // 清空验证码输入
     } catch (error) {
       console.error('获取验证码失败:', error);
@@ -65,207 +90,160 @@ export default function LoginPage() {
     // 清除任何现有的错误信息
     if (clearError) clearError();
     loadCaptcha();
-  }, []); // 空依赖数组，只在组件挂载时执行一次
-  
+  }, []);
+
+  // 处理登录表单提交
   const onSubmit = async (data: LoginForm) => {
     if (!captchaData) {
-      toast.error('请先获取验证码');
+      toast.error('验证码未加载，请刷新页面');
       return;
     }
 
-    clearError();
     try {
-      console.log('尝试登录:', data.login);
       await login({
         login: data.login,
         password: data.password,
-        captchaId: captchaData.captchaId,
+        captchaId: captchaData.captchaId || captchaData.id || '',
         captcha: data.captcha
       });
-      console.log('登录成功，跳转首页');
-      router.push('/');
-    } catch (err: any) {
-      console.error('登录错误:', err);
-      // 登录失败后刷新验证码
+      
+      // 登录成功后，检查是否有保存的重定向路径
+      const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectPath) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        router.replace(redirectPath);
+      } else {
+        router.replace('/');
+      }
+    } catch (error: any) {
+      // 登录失败，刷新验证码
       loadCaptcha();
     }
   };
 
+  // 获取验证码图片URL
+  const getCaptchaImageUrl = () => {
+    if (!captchaData) return null;
+    return captchaData.imageUrl || captchaData.image;
+  };
+
   return (
-    <div className="w-full h-full flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-800">登录AI灵感社</h2>
-          <p className="mt-2 text-gray-600">
-            使用您的账号登录，开始创作之旅
-          </p>
+    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">登录</h1>
+          <p className="text-gray-600 mt-2">欢迎回来，请登录您的账号</p>
         </div>
-        
-        <div className="bg-gray-50 shadow-lg rounded-xl p-8 backdrop-blur-sm border border-gray-200" 
-             style={{
-               boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05)'
-             }}>
+
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div>
-            <label htmlFor="login" className="block text-sm font-medium text-foreground">
-              用户名/邮箱
-            </label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="login">用户名或邮箱</Label>
+            <Input
               id="login"
               type="text"
-              autoComplete="username"
-              className="mt-1 block w-full rounded-md border border-input bg-background/30 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              {...register('login', { 
-                required: '请输入用户名或邮箱',
-                minLength: { 
-                  value: 3, 
-                  message: '用户名至少需要3个字符' 
-                }
-              })}
+              placeholder="请输入用户名或邮箱"
+              {...register('login', { required: '请输入用户名或邮箱' })}
             />
-            {errors.login && (
-              <p className="mt-1 text-sm text-destructive">{errors.login.message}</p>
-            )}
+            {errors.login && <p className="text-red-500 text-sm">{errors.login.message}</p>}
           </div>
-          
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-foreground">
-              密码
-            </label>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">密码</Label>
             <div className="relative">
-              <input
+              <Input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                className="mt-1 block w-full rounded-md border border-input bg-background/30 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                {...register('password', { 
-                  required: '请输入密码',
-                  minLength: { 
-                    value: 6, 
-                    message: '密码至少需要6个字符' 
-                  }
-                })}
+                placeholder="请输入密码"
+                {...register('password', { required: '请输入密码' })}
               />
               <button
                 type="button"
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2"
                 onClick={() => setShowPassword(!showPassword)}
               >
-                {showPassword ? (
-                  <span className="text-muted-foreground">隐藏</span>
-                ) : (
-                  <span className="text-muted-foreground">显示</span>
-                )}
+                {showPassword ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
               </button>
             </div>
-            {errors.password && (
-              <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>
-            )}
+            {errors.password && <p className="text-red-500 text-sm">{errors.password.message}</p>}
           </div>
 
-          <div>
-            <label htmlFor="captcha" className="block text-sm font-medium text-foreground">
-              验证码
-            </label>
-            <div className="flex gap-2 mt-1">
-              <input
+          <div className="space-y-2">
+            <Label htmlFor="captcha">验证码</Label>
+            <div className="flex space-x-2">
+              <Input
                 id="captcha"
                 type="text"
-                autoComplete="off"
-                className="flex-1 rounded-md border border-input bg-background/30 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="输入验证码"
-                maxLength={4}
-                {...register('captcha', { 
-                  required: '请输入验证码',
-                  minLength: { 
-                    value: 4, 
-                    message: '请输入4位验证码' 
-                  }
-                })}
+                placeholder="请输入验证码"
+                {...register('captcha', { required: '请输入验证码' })}
               />
               <div 
-                className="w-24 h-10 border border-input rounded-md cursor-pointer flex items-center justify-center bg-background/30 hover:bg-background/50 transition-colors"
+                className="w-32 h-10 flex-shrink-0 cursor-pointer border rounded overflow-hidden"
                 onClick={loadCaptcha}
               >
-                {isLoadingCaptcha ? (
-                  <span className="text-xs text-muted-foreground">加载中...</span>
-                ) : captchaData ? (
+                {getCaptchaImageUrl() ? (
                   <img 
-                    src={captchaData.image} 
+                    src={getCaptchaImageUrl() || ''} 
                     alt="验证码" 
-                    className="w-full h-full object-contain rounded"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      console.error('验证码图片加载失败', e);
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = null; // 防止循环错误
+                      target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLWFsZXJ0LWNpcmNsZSI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz48bGluZSB4MT0iMTIiIHkxPSI4IiB4Mj0iMTIiIHkyPSIxMiIvPjxsaW5lIHgxPSIxMiIgeTE9IjE2IiB4Mj0iMTIuMDEiIHkyPSIxNiIvPjwvc3ZnPg==';
+                      loadCaptcha(); // 自动重新加载验证码
+                    }}
                   />
                 ) : (
-                  <span className="text-xs text-muted-foreground">点击获取</span>
+                  <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                    {isLoadingCaptcha ? '加载中...' : '点击获取'}
+                  </div>
                 )}
               </div>
             </div>
-            {errors.captcha && (
-              <p className="mt-1 text-sm text-destructive">{errors.captcha.message}</p>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">点击验证码图片可刷新</p>
+            {errors.captcha && <p className="text-red-500 text-sm">{errors.captcha.message}</p>}
           </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link href="/forgot-password" className="text-primary hover:underline">
-                忘记密码?
-              </Link>
-            </div>
+
+          {authError && <p className="text-red-500 text-sm">{authError}</p>}
+
+          <div className="flex justify-between items-center">
+            <a href="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
+              忘记密码?
+            </a>
           </div>
-          
-          {authError && (
-            <div className="rounded-md bg-destructive/15 p-4">
-              <div className="text-sm text-destructive">{authError}</div>
-            </div>
-          )}
-          
-          <div className="mt-6 flex flex-col space-y-3">
-            <Button type="submit" disabled={isLoading} className="w-full">
-              {isLoading ? '登录中...' : '登录'}
-            </Button>
-            
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-gray-500">或</span>
-              </div>
-            </div>
-            
-            <Button
-              type="button"
-              variant="outline"
-                onClick={() => setShowWechatModal(true)}
-              className="flex items-center justify-center gap-2 border-green-500 text-green-600 hover:bg-green-50"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8.69 11.52a.96.96 0 0 1-.96-.96c0-.53.43-.96.96-.96s.96.43.96.96-.43.96-.96.96m6.62 0a.96.96 0 0 1-.96-.96c0-.53.43-.96.96-.96s.96.43.96.96-.43.96-.96.96m-3.2-7.04c-4.79 0-8.69 3.28-8.69 7.32C3.42 15 5.5 17.59 8.49 18.64l-.8 2.39c-.03.09 0 .18.07.24.06.06.16.1.24.07l2.82-1.42c.73.2 1.5.31 2.29.31 4.79 0 8.69-3.28 8.69-7.32s-3.9-7.32-8.69-7.32" />
-              </svg>
-              微信登录
-            </Button>
-          </div>
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading ? '登录中...' : '登录'}
+          </Button>
         </form>
-        
-        <div className="mt-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            还没有账号？
-            <Link href="/register" className="text-primary hover:underline ml-1">
-              立即注册
-            </Link>
-          </p>
+
+        <div className="flex items-center justify-center">
+          <span className="text-gray-500">还没有账号?</span>
+          <a href="/register" className="ml-2 text-blue-600 hover:text-blue-800">
+            立即注册
+          </a>
         </div>
+        
+        <div className="pt-4 text-center">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setShowWechatModal(true)}
+          >
+            微信登录
+          </Button>
         </div>
       </div>
-
-      {showWechatModal && (
-        <WechatLoginModal
-          isOpen={showWechatModal}
-          onClose={() => setShowWechatModal(false)}
-          qrCodeUrl="/icon/wechatlogin.png"
-        />
-      )}
+      
+      {/* 微信登录模态框 */}
+      <WechatLoginModal 
+        isOpen={showWechatModal} 
+        onClose={() => setShowWechatModal(false)} 
+      />
     </div>
   );
 } 
