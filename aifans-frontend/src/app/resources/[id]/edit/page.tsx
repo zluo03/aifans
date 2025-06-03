@@ -65,11 +65,9 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
   useEffect(() => {
     const checkAdminStatus = async () => {
       setCheckingAuth(true);
-      console.log('开始验证管理员权限...');
       
       // 如果没有token，直接重定向到首页
       if (!token) {
-        console.log('未找到认证令牌，重定向到首页');
         toast.error('请先登录');
         router.push('/');
         return;
@@ -78,18 +76,15 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
       try {
         // 确保token格式正确
         const formattedToken = token?.startsWith('Bearer ') ? token : `Bearer ${token}`;
-        console.log('认证令牌状态:', !!formattedToken);
         
         // 直接从用户对象判断是否为管理员
         const { user } = useAuthStore.getState();
         if (user && user.role === 'ADMIN') {
-          console.log('用户已是管理员，跳过API验证');
           setIsAdmin(true);
           setCheckingAuth(false);
           return;
         }
         
-        console.log('调用API验证管理员权限...');
         const response = await fetch('/api/check-admin', {
           headers: {
             'Authorization': formattedToken
@@ -97,28 +92,21 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
           cache: 'no-cache'
         });
         
-        console.log('API响应状态:', response.status);
-        
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: `HTTP错误 ${response.status}` }));
-          console.error('验证失败详情:', errorData);
           throw new Error(errorData.error || '验证管理员权限失败');
         }
         
         const data = await response.json();
-        console.log('验证结果:', data);
         
         if (!data.isAdmin) {
-          console.log('用户不是管理员，重定向到首页');
           toast.error('您没有权限访问此页面');
           router.push('/');
           return;
         }
         
-        console.log('验证成功，用户是管理员');
         setIsAdmin(true);
       } catch (error) {
-        console.error('验证管理员权限失败:', error);
         toast.error(error instanceof Error ? error.message : '验证权限失败，请重新登录');
         router.push('/');
       } finally {
@@ -136,7 +124,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
 
   const handleAutoSave = useCallback((content: string) => {
     // 可选：自动保存功能
-    console.log('自动保存内容:', content);
   }, []);
 
   // 封面图片上传处理
@@ -163,7 +150,7 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
           maxSizeMB = limit.imageMaxSizeMB;
         }
       } catch (limitError) {
-        console.warn('获取上传限制失败，使用默认值', limitError);
+        // 使用默认值
       }
 
       // 验证文件大小
@@ -171,12 +158,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
         toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
-
-      console.log('准备上传文件:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
       
       const formData = new FormData();
       formData.append('file', file);
@@ -195,8 +176,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
         },
       });
 
-      console.log('响应状态:', response.status);
-
       if (!response.ok) {
         let errorData;
         try {
@@ -204,21 +183,18 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
         } catch (parseError) {
           errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
         }
-        console.error('上传失败详情:', errorData);
         const errorMessage = errorData.error || '未知错误';
         const errorDetails = errorData.details ? ` (${errorData.details})` : '';
         throw new Error(`${errorMessage}${errorDetails}`);
       }
 
       const result = await response.json();
-      console.log('上传成功结果:', result);
       
       // 设置封面URL
       setCoverImageUrl(result.url);
       toast.success(`封面图片上传成功`);
       return [result];
     } catch (error) {
-      console.error('Upload error:', error);
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       toast.error(`封面图片上传失败: ${errorMessage}`);
       return [{ url: '', key: '' }];
@@ -242,7 +218,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
       const data = await response.json();
       setCategories(data);
     } catch (error) {
-      console.error('获取分类失败:', error);
       toast.error('获取分类失败');
     } finally {
       setCategoriesLoading(false);
@@ -264,7 +239,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
       setCoverImageUrl(data.coverImageUrl || '');
       setCategoryId(data.category.id);
     } catch (error) {
-      console.error('获取资源失败:', error);
       toast.error('获取资源失败');
       router.push('/resources');
     }
@@ -304,7 +278,7 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
           }
         }
       } catch (error) {
-        console.error('获取localStorage中的token失败:', error);
+        // 继续使用原始token
       }
       
       if (!authToken) {
@@ -337,7 +311,6 @@ export default function ResourceEditPage({ params }: ResourceEditPageProps) {
       toast.success('资源更新成功');
       router.push(`/resources/${resourceId}`);
     } catch (error) {
-      console.error('更新资源失败:', error);
       toast.error(error instanceof Error ? error.message : '更新资源失败');
     } finally {
       setLoading(false);

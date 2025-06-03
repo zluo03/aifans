@@ -57,8 +57,10 @@ async function readConfig(): Promise<UploadLimits> {
     await ensureConfigDir();
     if (existsSync(configFile)) {
       const content = await readFile(configFile, 'utf-8');
+      console.log('读取到配置文件:', content);
       return JSON.parse(content);
     }
+    console.log('配置文件不存在，使用默认配置');
     return defaultLimits;
   } catch (error) {
     console.error('读取配置文件失败:', error);
@@ -68,11 +70,19 @@ async function readConfig(): Promise<UploadLimits> {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ module: string }> }
+  context: { params: { module: string } }
 ) {
-  const { module } = await params;
+  // 在Next.js最新版本中，正确访问params
+  const { module } = context.params;
+  
   try {
+    console.log(`处理模块 ${module} 的上传限制请求`);
+    
+    // 先从本地配置读取
     const limits = await readConfig();
+    console.log('读取到的配置:', limits);
+    
+    // 返回本地配置
     let result;
     if (module === 'notes') {
       result = {
@@ -86,6 +96,7 @@ export async function GET(
       };
     } else if (module === 'screenings') {
       result = {
+        imageMaxSizeMB: 10, // 影院模块的封面图片限制
         videoMaxSizeMB: limits.screenings.videoSize,
       };
     } else if (module === 'creator') {
@@ -96,15 +107,19 @@ export async function GET(
         audioMaxSizeMB: limits.creator?.audioMaxSizeMB ?? 20,
       };
     } else {
+      console.warn(`未知的模块: ${module}`);
       return NextResponse.json(
-        { success: false, message: '未知的模块' },
+        { error: '未知的模块' },
         { status: 400 }
       );
     }
+    
+    console.log(`返回${module}模块的上传限制:`, result);
     return NextResponse.json(result);
   } catch (error) {
+    console.error('获取上传限制失败:', error);
     return NextResponse.json(
-      { success: false, message: '获取上传限制失败' },
+      { error: '获取上传限制失败' },
       { status: 500 }
     );
   }
@@ -112,12 +127,14 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ module: string }> }
+  context: { params: { module: string } }
 ) {
-  const { module } = await params;
+  // 在Next.js最新版本中，正确访问params
+  const { module } = context.params;
+  
   if (module !== 'creator') {
     return NextResponse.json(
-      { success: false, message: '只支持creator模块' },
+      { error: '只支持creator模块' },
       { status: 400 }
     );
   }
@@ -142,10 +159,11 @@ export async function POST(
     await ensureConfigDir();
     await writeFile(configFile, JSON.stringify(newLimits, null, 2), 'utf-8');
 
-    return NextResponse.json({ success: true, limits: newLimits.creator });
+    return NextResponse.json(newLimits.creator);
   } catch (error) {
+    console.error('保存上传限制失败:', error);
     return NextResponse.json(
-      { success: false, message: '保存失败' },
+      { error: '保存失败' },
       { status: 500 }
     );
   }

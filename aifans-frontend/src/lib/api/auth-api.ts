@@ -23,7 +23,6 @@ export async function login(credentials: {
 
     return await response.json();
   } catch (error) {
-    console.error('登录失败:', error);
     throw error;
   }
 }
@@ -51,7 +50,6 @@ export async function register(userData: {
 
     return await response.json();
   } catch (error) {
-    console.error('注册失败:', error);
     throw error;
   }
 }
@@ -67,7 +65,6 @@ export async function getCaptcha() {
     
     return await response.json();
   } catch (error) {
-    console.error('获取验证码失败:', error);
     throw error;
   }
 }
@@ -90,7 +87,6 @@ export async function sendVerificationCode(email: string) {
     
     return await response.json();
   } catch (error) {
-    console.error('发送验证码失败:', error);
     throw error;
   }
 }
@@ -113,7 +109,6 @@ export async function forgotPassword(email: string) {
     
     return await response.json();
   } catch (error) {
-    console.error('请求密码重置失败:', error);
     throw error;
   }
 }
@@ -136,7 +131,6 @@ export async function resetPassword(token: string, newPassword: string) {
     
     return await response.json();
   } catch (error) {
-    console.error('重置密码失败:', error);
     throw error;
   }
 }
@@ -159,7 +153,6 @@ export async function verifyWechatCode(code: string) {
     
     return await response.json();
   } catch (error) {
-    console.error('验证码验证失败:', error);
     throw error;
   }
 }
@@ -180,7 +173,6 @@ export async function getProfile(token: string) {
     
     return await response.json();
   } catch (error) {
-    console.error('获取用户资料失败:', error);
     throw error;
   }
 } 

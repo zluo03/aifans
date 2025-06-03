@@ -48,10 +48,19 @@ function ProfileContent() {
   const [saving, setSaving] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
+  const [previousPage, setPreviousPage] = useState('');
   const displayAvatarUrl = avatarUrl ? (avatarUrl.startsWith('http') ? avatarUrl : `/images/default-avatar.png`) : '/images/default-avatar.png';
 
   useEffect(() => {
     if (!user) router.push('/login');
+    
+    // 保存前一个页面URL
+    if (typeof window !== 'undefined') {
+      const referrer = document.referrer;
+      if (referrer && !referrer.includes('/login')) {
+        setPreviousPage(referrer);
+      }
+    }
   }, [user, router]);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,6 +167,13 @@ function ProfileContent() {
       toast.success(result.message);
       setRedeemCode('');
       await forceRefreshUserProfile();
+      
+      // 返回之前的页面，如果没有则保留在当前页面
+      if (previousPage) {
+        window.location.href = previousPage;
+      } else {
+        router.back();
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.message || '兑换失败');
     } finally {

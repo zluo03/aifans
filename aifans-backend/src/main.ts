@@ -1,20 +1,46 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as express from 'express';
 import { join } from 'path';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as cookieParser from 'cookie-parser';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // 设置全局前缀
-  app.setGlobalPrefix('api');
+  // 设置全局前缀，但排除public路径
+  app.setGlobalPrefix('api', {
+    exclude: ['/public/(.*)'],
+  });
 
-  // 添加全局异常过滤器
+  // 设置全局管道
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
+
+  // 设置全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // 配置Swagger
+  const config = new DocumentBuilder()
+    .setTitle('AIFans API')
+    .setDescription('AIFans API文档')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('docs', app, document);
 
   // 静态文件服务配置 - 重构，确保头像等静态资源可访问
   console.log('配置静态文件服务...');
@@ -81,8 +107,10 @@ async function bootstrap() {
     res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     
-    // 设置缓存控制
-    res.header('Cache-Control', 'public, max-age=86400'); // 24小时缓存
+    // 设置缓存控制 - 减少缓存时间，从24小时改为5分钟
+    res.header('Cache-Control', 'public, max-age=300'); // 5分钟缓存
+    res.header('Pragma', 'no-cache'); // 添加no-cache头部
+    res.header('Expires', '0'); // 强制重新验证
     
     // 根据文件扩展名设置正确的Content-Type
     const reqPath = req.path;
@@ -139,7 +167,7 @@ async function bootstrap() {
   
   // 配置静态文件服务 - 确保路径正确且有访问权限
   // 注意：使用serveStatic而不是express.static，以便更好地控制内容类型
-  const serveStatic = (req, res, next) => {
+  const serveStatic = async (req, res, next) => {
     const requestUrl = req.url.replace(/\?.*$/, ''); // 移除查询参数
     const filePath = path.join(process.cwd(), 'uploads', requestUrl);
     
@@ -149,6 +177,64 @@ async function bootstrap() {
       完整文件路径: filePath,
       时间戳: new Date().toISOString()
     });
+    
+    try {
+      // 检查当前存储配置
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+      const fs = require('fs');
+      const path = require('path');
+      
+      const storageConfig = await prisma.storageConfig.findFirst();
+      const ossConfig = await prisma.ossConfig.findFirst();
+      
+      // 如果使用OSS存储且OSS配置存在，则需要检查文件是否已迁移
+      if (storageConfig?.defaultStorage === 'oss' && ossConfig) {
+        // 获取文件相对路径
+        const relativePath = requestUrl.startsWith('/') ? requestUrl.substring(1) : requestUrl;
+        
+        // 检查迁移记录，确认文件是否已迁移到OSS
+        const migrationRecordPath = path.join(process.cwd(), 'migration-records.json');
+        let migrationRecords = {};
+        
+        try {
+          if (fs.existsSync(migrationRecordPath)) {
+            const recordContent = fs.readFileSync(migrationRecordPath, 'utf8');
+            migrationRecords = JSON.parse(recordContent);
+          }
+        } catch (recordError) {
+          console.error('读取迁移记录失败:', recordError);
+        }
+        
+        // 只有已迁移的文件才重定向到OSS
+        if (migrationRecords[relativePath] === 'oss') {
+          // 构建OSS URL
+          const domain = ossConfig.domain || `https://${ossConfig.bucket}.${ossConfig.endpoint}`;
+          const ossUrl = `${domain}/${relativePath}`;
+          
+          console.log(`文件已迁移，重定向到OSS URL: ${ossUrl}`);
+          
+          // 设置CORS头，允许跨域访问
+          res.header('Access-Control-Allow-Origin', '*');
+          res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+          res.header('Access-Control-Allow-Headers', 'Content-Type');
+          
+          // 对于视频文件，添加必要的视频播放相关头
+          const ext = path.extname(filePath).toLowerCase();
+          if (ext === '.mp4' || ext === '.webm' || ext === '.ogg') {
+            res.header('Accept-Ranges', 'bytes');
+          }
+          
+          // 使用302临时重定向，确保浏览器每次都请求最新的URL
+          return res.redirect(302, ossUrl);
+        } else {
+          console.log(`文件未迁移或未找到迁移记录，使用本地文件: ${relativePath}`);
+        }
+      }
+    } catch (dbError) {
+      console.error('检查存储配置失败:', dbError);
+      // 如果数据库查询失败，继续使用本地文件
+    }
     
     // 检查文件是否存在
     fs.stat(filePath, (err, stats) => {
@@ -223,7 +309,9 @@ async function bootstrap() {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Length', stats.size);
       res.setHeader('Last-Modified', stats.mtime.toUTCString());
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cache-Control', 'public, max-age=300'); // 5分钟缓存
+      res.setHeader('Pragma', 'no-cache'); // 添加no-cache头部
+      res.setHeader('Expires', '0'); // 强制重新验证
       res.setHeader('Accept-Ranges', 'bytes');
       
       // 创建文件流并发送
@@ -248,8 +336,12 @@ async function bootstrap() {
     index: false,
     etag: true,
     lastModified: true,
-    maxAge: 86400000, // 24小时缓存 (毫秒)
+    maxAge: 300000, // 5分钟缓存 (毫秒)
     setHeaders: (res, filePath) => {
+      // 添加额外的缓存控制头部
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       // 根据文件扩展名设置正确的Content-Type
       const ext = path.extname(filePath).toLowerCase();
       if (ext === '.jpg' || ext === '.jpeg') {
@@ -278,13 +370,17 @@ async function bootstrap() {
     next();
   });
 
-  // 配置跨域
+  // 配置Cookie解析
+  app.use(cookieParser());
+
+  // 配置CORS
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://dev.aifans.pro', 'https://dev.aifans.pro', '*'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'ngrok-skip-browser-warning'],
-    exposedHeaders: ['Content-Disposition'],
-    credentials: true
+    origin: true, // 允许所有来源，或者在生产环境中指定具体域名
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+    allowedHeaders: 'Content-Type,Accept,Authorization,X-Requested-With',
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // 启用全局验证管道
@@ -296,5 +392,6 @@ async function bootstrap() {
   }));
 
   await app.listen(process.env.PORT || 3001, '0.0.0.0');
+  console.log(`应用已启动: http://localhost:${process.env.PORT || 3001}/`);
 }
 bootstrap();

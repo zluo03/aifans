@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await checkAuth();
         } catch (error) {
-          console.error('[AuthProvider] 重新加载用户状态失败:', error);
+          // 处理错误
         }
       }, 100); // 延迟100ms
     };
@@ -171,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }, 2000);
           }
         } catch (error) {
-          console.error('[AuthProvider] 刷新用户状态时出错:', error);
+          // 处理错误
         }
       }
     };
@@ -196,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }, 2000);
           }
         } catch (error) {
-          console.error('[AuthProvider] 刷新用户状态时出错:', error);
+          // 处理错误
         }
       }
     };

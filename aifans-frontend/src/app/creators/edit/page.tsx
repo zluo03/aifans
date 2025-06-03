@@ -130,12 +130,30 @@ export default function EditCreatorProfilePage() {
     if (!file) return;
     
     // 获取文件类型限制
-    const maxSizeMB = type === 'image' ? 5 : type === 'video' ? 50 : 20;
-    const maxSize = maxSizeMB * 1024 * 1024;
+    let maxSizeMB = type === 'image' ? 5 : type === 'video' ? 50 : 20;
     
-    // 文件大小检查
-    if (file.size > maxSize) {
-      toast.error(`文件大小不能超过 ${maxSizeMB}MB`);
+    try {
+      // 从公共API获取上传限制
+      const limitResponse = await fetch('/api/public/settings/upload-limits/creator');
+      if (limitResponse.ok) {
+        const limits = await limitResponse.json();
+        if (type === 'image' && limits.imageMaxSizeMB) {
+          maxSizeMB = limits.imageMaxSizeMB;
+        } else if (type === 'video' && limits.videoMaxSizeMB) {
+          maxSizeMB = limits.videoMaxSizeMB;
+        } else if (type === 'audio' && limits.audioMaxSizeMB) {
+          maxSizeMB = limits.audioMaxSizeMB;
+        }
+        console.log(`获取到${type}类型的上传限制: ${maxSizeMB}MB`);
+      }
+    } catch (error) {
+      console.warn('获取上传限制失败，使用默认值', error);
+    }
+    
+    // 检查文件大小
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > maxSizeMB) {
+      toast.error(`文件大小超过限制 (${maxSizeMB}MB)`);
       return;
     }
     

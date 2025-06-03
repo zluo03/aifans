@@ -51,8 +51,8 @@ var AlipayConfig = function () {
             this.appId = this.configService.get('ALIPAY_APP_ID') || '';
             this.privateKey = this.configService.get('ALIPAY_PRIVATE_KEY') || '';
             this.alipayPublicKey = this.configService.get('ALIPAY_PUBLIC_KEY') || '';
-            this.returnUrl = this.configService.get('ALIPAY_RETURN_URL') || 'http://localhost:3000/membership/payment-result';
-            this.notifyUrl = this.configService.get('ALIPAY_NOTIFY_URL') || 'http://localhost:3000/api/payments/alipay-notify';
+            this.returnUrl = this.configService.get('ALIPAY_RETURN_URL') || '/membership/payment-result';
+            this.notifyUrl = this.configService.get('ALIPAY_NOTIFY_URL') || '/api/payments/alipay-notify';
         }
         return AlipayConfig_1;
     }());

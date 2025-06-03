@@ -5,11 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { Loader2, Save, CloudUpload, HardDrive, Cloud } from 'lucide-react';
-import axios from 'axios';
+import { Loader2, Save, CloudUpload, HardDrive, Cloud, ArrowRightLeft } from 'lucide-react';
 
 // OSS配置接口
 interface OSSConfig {
@@ -24,68 +21,166 @@ interface OSSConfig {
 // 简化的存储配置接口
 interface StorageConfig {
   defaultStorage: 'local' | 'oss';
-  maxFileSize: number; // MB
-  enableCleanup: boolean;
-  cleanupDays: number;
 }
 
 // 存储统计接口
 interface StorageStats {
-  localStorage: {
-    totalFiles: number;
-    totalSize: number; // bytes
-    location: string;
-  };
-  ossStorage: {
-    totalFiles: number;
-    totalSize: number; // bytes
-    bucket: string;
-  };
+  totalSize: number;
+  totalFiles: number;
+  storageType: 'local' | 'oss';
 }
 
 export default function StorageSettingsPage() {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [stats, setStats] = useState<StorageStats>({
+    totalSize: 0,
+    totalFiles: 0,
+    storageType: 'local',
+  });
   const [ossConfig, setOssConfig] = useState<OSSConfig>({
     accessKeyId: '',
     accessKeySecret: '',
     bucket: '',
-    region: '',
+    region: 'cn-hangzhou',
     endpoint: '',
-    domain: '',
+    domain: ''
   });
-  
   const [storageConfig, setStorageConfig] = useState<StorageConfig>({
-    defaultStorage: 'local',
-    maxFileSize: 100,
-    enableCleanup: false,
-    cleanupDays: 30,
+    defaultStorage: 'local'
   });
   
-  const [stats, setStats] = useState<StorageStats>({
-    localStorage: {
-      totalFiles: 0,
-      totalSize: 0,
-      location: 'aifans-backend/uploads/',
-    },
-    ossStorage: {
-      totalFiles: 0,
-      totalSize: 0,
-      bucket: '',
-    },
-  });
-  
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  // 获取认证token
+  const getAuthToken = (): string => {
+    let token = '';
+    
+    try {
+      // 从localStorage获取auth-storage
+      const authStorage = localStorage.getItem('auth-storage');
+      
+      if (authStorage) {
+        try {
+          const parsedStorage = JSON.parse(authStorage);
+          
+          if (parsedStorage.state?.token) {
+            token = parsedStorage.state.token;
+          }
+        } catch (error) {
+          console.log('获取token - 解析auth-storage失败:', error);
+        }
+      } else {
+        // 尝试从cookie中获取
+        const cookies = document.cookie.split(';');
+        const tokenCookie = cookies.find(cookie => cookie.trim().startsWith('token='));
+        if (tokenCookie) {
+          token = tokenCookie.split('=')[1].trim();
+        }
+      }
+    } catch (error) {
+      console.log('获取token - 发生错误:', error);
+    }
+    
+    // 确保token格式正确
+    if (token && !token.startsWith('Bearer ')) {
+      token = `Bearer ${token}`;
+    }
+    
+    return token;
+  };
   
   // 获取OSS配置
   const fetchOSSConfig = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/admin/settings/storage');
-      setOssConfig(response.data.oss || ossConfig);
-      setStorageConfig(response.data.storage || storageConfig);
+      
+      // 获取token
+      const token = getAuthToken();
+      if (!token) {
+        toast.error('未找到认证信息，请重新登录');
+        return;
+      }
+      
+      // 使用API路由获取数据
+      const apiUrl = '/api/admin/settings/storage/config';
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': token
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`API响应状态 ${response.status}:`, errorText);
+        throw new Error(`获取配置失败 ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      console.log('OSS配置 - 接收到的原始数据:', JSON.stringify(data));
+      
+      // 处理不同的响应格式
+      let ossData: Partial<OSSConfig> = {};
+      let storageData: Partial<StorageConfig> = {};
+      
+      if (data.oss) {
+        // 直接包含oss字段
+        ossData = data.oss;
+      } else if (data.config && data.config.oss) {
+        // 配置在config字段中
+        ossData = data.config.oss;
+      }
+      
+      if (data.storage) {
+        // 直接包含storage字段
+        storageData = data.storage;
+      } else if (data.config && data.config.storage) {
+        // 配置在config字段中
+        storageData = data.config.storage;
+      }
+      
+      // 更新OSS配置
+      if (Object.keys(ossData).length > 0) {
+        setOssConfig({
+          accessKeyId: ossData.accessKeyId || '',
+          accessKeySecret: ossData.accessKeySecret || '',
+          bucket: ossData.bucket || '',
+          region: ossData.region || 'cn-hangzhou',
+          endpoint: ossData.endpoint || '',
+          domain: ossData.domain || ''
+        });
+      }
+      
+      // 更新存储配置
+      if (Object.keys(storageData).length > 0) {
+        // 确保defaultStorage是正确的类型
+        let defaultStorage: 'local' | 'oss' = 'local';
+        if (storageData.defaultStorage === 'oss') {
+          defaultStorage = 'oss';
+        }
+        
+        setStorageConfig({
+          defaultStorage: defaultStorage
+        });
+      }
     } catch (error) {
-      toast.error('获取存储配置失败');
+      console.log('获取OSS配置失败:', error);
+      toast.error('获取配置失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      
+      // 发生错误时设置默认值
+      setOssConfig({
+        accessKeyId: '',
+        accessKeySecret: '',
+        bucket: '',
+        region: 'cn-hangzhou',
+        endpoint: '',
+        domain: ''
+      });
+      
+      setStorageConfig({
+        defaultStorage: 'local'
+      });
     } finally {
       setLoading(false);
     }
@@ -94,29 +189,103 @@ export default function StorageSettingsPage() {
   // 获取存储统计
   const fetchStorageStats = async () => {
     try {
-      const response = await axios.get('/api/admin/settings/storage/stats');
-      setStats(response.data);
-    } catch (error) {
-      console.error('获取存储统计失败', error);
+      // 获取token
+      const token = getAuthToken();
+      if (!token) {
+        toast.error('未找到认证信息，请重新登录');
+        return;
+      }
+      
+      // 构建API URL
+      const apiUrl = `/api/admin/settings/storage/stats`;
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': token
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`获取配置失败 ${response.status}: ${errorText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      if (responseData.success && responseData.data) {
+        setStats(responseData.data);
+      } else {
+        throw new Error('API返回数据格式错误');
+      }
+    } catch (error: any) {
+      console.log('获取存储统计失败:', error);
+      toast.error('获取统计失败: ' + error.message);
     }
   };
   
-  useEffect(() => {
-    fetchOSSConfig();
-    fetchStorageStats();
-  }, []);
-  
   // 保存OSS配置
-  const handleSaveOSSConfig = async () => {
+  const saveOSSConfig = async () => {
     try {
       setSaving(true);
-      await axios.post('/api/admin/settings/storage', {
+      
+      // 获取token
+      const token = getAuthToken();
+      if (!token) {
+        toast.error('未找到认证信息，请重新登录');
+        return;
+      }
+      
+      // 构建API URL - 使用专门的保存OSS配置的API端点
+      const apiUrl = `/api/admin/settings/storage/save-oss-config`;
+      
+      // 添加后端要求的字段
+      const requestBody = {
         oss: ossConfig,
-        storage: storageConfig
+        storage: storageConfig,
+        notes: {
+          imageSize: 10, // 默认值，单位MB
+          videoSize: 100 // 默认值，单位MB
+        },
+        inspiration: {
+          imageSize: 10, // 默认值，单位MB
+          videoSize: 100 // 默认值，单位MB
+        },
+        screenings: {
+          videoSize: 500 // 默认值，单位MB
+        }
+      };
+      
+      // 确保所有字段值为整数且不小于1
+      requestBody.notes.imageSize = Math.max(1, Math.floor(requestBody.notes.imageSize));
+      requestBody.notes.videoSize = Math.max(1, Math.floor(requestBody.notes.videoSize));
+      requestBody.inspiration.imageSize = Math.max(1, Math.floor(requestBody.inspiration.imageSize));
+      requestBody.inspiration.videoSize = Math.max(1, Math.floor(requestBody.inspiration.videoSize));
+      requestBody.screenings.videoSize = Math.max(1, Math.floor(requestBody.screenings.videoSize));
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify(requestBody)
       });
-      toast.success('存储配置已更新');
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`API响应状态 ${response.status}:`, errorText);
+        throw new Error(`保存配置失败 ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      toast.success('配置保存成功');
+      
+      // 重新加载配置
+      await fetchOSSConfig();
     } catch (error) {
-      toast.error('保存失败，请检查配置信息');
+      console.log('保存OSS配置失败:', error);
+      toast.error(`保存失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setSaving(false);
     }
@@ -125,13 +294,98 @@ export default function StorageSettingsPage() {
   // 测试OSS连接
   const handleTestOSSConnection = async () => {
     try {
-      const response = await axios.post('/api/admin/settings/storage/test', ossConfig);
-      toast.success('OSS连接测试成功');
+      // 获取token
+      const token = getAuthToken();
+      if (!token) {
+        toast.error('未找到认证信息，请重新登录');
+        return;
+      }
+      
+      // 构建API URL
+      const apiUrl = `/api/admin/settings/storage/test`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify(ossConfig)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`测试失败 ${response.status}: ${errorText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      if (responseData.success) {
+        toast.success('OSS连接测试成功!');
+      } else {
+        toast.error(`OSS连接测试失败: ${responseData.message || '未知错误'}`);
+      }
     } catch (error) {
-      toast.error('OSS连接测试失败：' + (error.response?.data?.message || '未知错误'));
+      console.log('测试OSS连接失败:', error);
+      toast.error(`测试失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   };
-
+  
+  // 迁移存储
+  const migrateStorage = async () => {
+    try {
+      setMigrating(true);
+      
+      // 获取token
+      const token = getAuthToken();
+      if (!token) {
+        toast.error('未找到认证信息，请重新登录');
+        return;
+      }
+      
+      // 构建API URL - 使用用户选择的存储类型作为目标
+      const targetStorage = storageConfig.defaultStorage;
+      const apiUrl = `/api/admin/settings/storage/migrate`;
+      
+      toast.info(`开始将文件迁移到${targetStorage === 'local' ? '本地存储' : 'OSS存储'}，这可能需要一些时间...`);
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify({
+          targetStorage: targetStorage
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`API响应状态 ${response.status}:`, errorText);
+        throw new Error(`迁移失败 ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success(`迁移成功! 已迁移 ${data.migratedFiles || 0} 个文件${data.skippedFiles ? `, 跳过 ${data.skippedFiles} 个已迁移文件` : ''}`);
+        
+        // 更新存储配置已经在UI中完成，不需要再次设置
+        
+        // 重新加载统计信息
+        await fetchStorageStats();
+      } else {
+        toast.error(`迁移失败: ${data.message || '未知错误'}`);
+      }
+    } catch (error) {
+      console.log('迁移存储失败:', error);
+      toast.error(`迁移失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setMigrating(false);
+    }
+  };
+  
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB'];
     let size = bytes;
@@ -145,6 +399,17 @@ export default function StorageSettingsPage() {
     return `${size.toFixed(1)} ${units[unitIndex]}`;
   };
   
+  // 处理表单提交
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveOSSConfig();
+  };
+  
+  useEffect(() => {
+    fetchOSSConfig();
+    fetchStorageStats();
+  }, []);
+
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
@@ -154,286 +419,196 @@ export default function StorageSettingsPage() {
         </div>
       </div>
       
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="overview">存储概览</TabsTrigger>
-          <TabsTrigger value="oss-config">OSS配置</TabsTrigger>
-          <TabsTrigger value="settings">存储设置</TabsTrigger>
-        </TabsList>
-        
-        {/* 存储概览 */}
-        <TabsContent value="overview">
-          <div className="space-y-6">
-            {/* 存储统计 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">本地存储</CardTitle>
-                  <HardDrive className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.localStorage.totalFiles} 个文件</div>
-                  <p className="text-xs text-muted-foreground">
-                    总大小: {formatFileSize(stats.localStorage.totalSize)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    位置: {stats.localStorage.location}
-                  </p>
-                </CardContent>
-              </Card>
+      <div className="grid grid-cols-1 gap-6">
+        {/* 存储统计卡片 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>存储概览</CardTitle>
+            <CardDescription>当前存储状态和统计信息</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="flex flex-col items-center justify-center p-4 border rounded-lg">
+                <h3 className="font-medium text-lg">当前存储方式</h3>
+                <div className="flex items-center mt-2">
+                  {stats.storageType === 'local' ? (
+                    <>
+                      <HardDrive className="h-5 w-5 mr-2 text-blue-600" />
+                      <p className="text-xl font-bold text-blue-600">本地存储</p>
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="h-5 w-5 mr-2 text-green-600" />
+                      <p className="text-xl font-bold text-green-600">阿里云OSS</p>
+                    </>
+                  )}
+                </div>
+              </div>
               
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">OSS存储</CardTitle>
-                  <Cloud className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.ossStorage.totalFiles} 个文件</div>
-                  <p className="text-xs text-muted-foreground">
-                    总大小: {formatFileSize(stats.ossStorage.totalSize)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Bucket: {stats.ossStorage.bucket || '未配置'}
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="flex flex-col items-center justify-center p-4 border rounded-lg">
+                <h3 className="font-medium text-lg">文件总数</h3>
+                <p className="text-2xl font-bold mt-2">{stats.totalFiles} 个文件</p>
+              </div>
+              
+              <div className="flex flex-col items-center justify-center p-4 border rounded-lg">
+                <h3 className="font-medium text-lg">总存储大小</h3>
+                <p className="text-2xl font-bold mt-2">{formatFileSize(stats.totalSize)}</p>
+              </div>
             </div>
-
-            {/* 当前配置状态 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>当前存储配置</CardTitle>
-                <CardDescription>系统当前使用的存储配置信息</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 border rounded-lg">
-                    <h3 className="font-medium text-lg">默认存储</h3>
-                    <p className={`text-2xl font-bold mt-2 ${
-                      storageConfig.defaultStorage === 'local' ? 'text-blue-600' : 'text-green-600'
-                    }`}>
-                      {storageConfig.defaultStorage === 'local' ? '本地存储' : 'OSS存储'}
-                    </p>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg">
-                    <h3 className="font-medium text-lg">文件大小限制</h3>
-                    <p className="text-2xl font-bold mt-2 text-gray-600">
-                      {storageConfig.maxFileSize}MB
-                    </p>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg">
-                    <h3 className="font-medium text-lg">自动清理</h3>
-                    <p className="text-2xl font-bold mt-2 text-gray-600">
-                      {storageConfig.enableCleanup ? `${storageConfig.cleanupDays}天` : '关闭'}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+          </CardContent>
+        </Card>
         
-        {/* OSS配置 */}
-        <TabsContent value="oss-config">
-          <Card>
-            <CardHeader>
-              <CardTitle>阿里云OSS配置</CardTitle>
-              <CardDescription>
-                配置阿里云对象存储服务，用于文件上传和管理。
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="accessKeyId">Access Key ID</Label>
-                      <Input
-                        id="accessKeyId"
-                        type="text"
-                        value={ossConfig.accessKeyId}
-                        onChange={(e) => setOssConfig({ ...ossConfig, accessKeyId: e.target.value })}
-                        placeholder="LTAI****"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="accessKeySecret">Access Key Secret</Label>
-                      <Input
-                        id="accessKeySecret"
-                        type="password"
-                        value={ossConfig.accessKeySecret}
-                        onChange={(e) => setOssConfig({ ...ossConfig, accessKeySecret: e.target.value })}
-                        placeholder="****"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="bucket">Bucket名称</Label>
-                      <Input
-                        id="bucket"
-                        type="text"
-                        value={ossConfig.bucket}
-                        onChange={(e) => setOssConfig({ ...ossConfig, bucket: e.target.value })}
-                        placeholder="my-bucket"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="region">地域</Label>
-                      <Input
-                        id="region"
-                        type="text"
-                        value={ossConfig.region}
-                        onChange={(e) => setOssConfig({ ...ossConfig, region: e.target.value })}
-                        placeholder="cn-hangzhou"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="endpoint">Endpoint</Label>
-                      <Input
-                        id="endpoint"
-                        type="text"
-                        value={ossConfig.endpoint}
-                        onChange={(e) => setOssConfig({ ...ossConfig, endpoint: e.target.value })}
-                        placeholder="oss-cn-hangzhou.aliyuncs.com"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="domain">自定义域名 (可选)</Label>
-                      <Input
-                        id="domain"
-                        type="text"
-                        value={ossConfig.domain}
-                        onChange={(e) => setOssConfig({ ...ossConfig, domain: e.target.value })}
-                        placeholder="cdn.example.com"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <Button 
-                      variant="outline"
-                      onClick={handleTestOSSConnection}
-                    >
-                      测试连接
-                    </Button>
-                    <Button 
-                      onClick={handleSaveOSSConfig}
-                      disabled={saving}
-                    >
-                      {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      <Save className="mr-2 h-4 w-4" />
-                      保存配置
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        {/* 存储设置 */}
-        <TabsContent value="settings">
+        {/* 存储设置表单 */}
+        <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
               <CardTitle>存储设置</CardTitle>
-              <CardDescription>
-                配置文件存储的基本参数和清理策略。
-              </CardDescription>
+              <CardDescription>配置文件存储位置和阿里云OSS参数</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <Label htmlFor="defaultStorage">默认存储方式</Label>
-                    <select 
-                      id="defaultStorage"
-                      className="w-full mt-1 border border-gray-300 rounded-md px-3 py-2"
-                      value={storageConfig.defaultStorage}
-                      onChange={(e) => setStorageConfig({
-                        ...storageConfig, 
-                        defaultStorage: e.target.value as 'local' | 'oss'
-                      })}
-                    >
-                      <option value="local">本地存储</option>
-                      <option value="oss">OSS存储</option>
-                    </select>
-                    <p className="text-sm text-gray-500 mt-1">
-                      选择新上传文件的默认存储位置
-                    </p>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="maxFileSize">最大文件大小 (MB)</Label>
-                    <Input 
-                      id="maxFileSize"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      value={storageConfig.maxFileSize}
-                      onChange={(e) => setStorageConfig({
-                        ...storageConfig, 
-                        maxFileSize: parseInt(e.target.value) || 100
-                      })}
-                    />
-                    <p className="text-sm text-gray-500 mt-1">
-                      控制单个文件的最大上传大小
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* 存储位置选择 */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">存储位置</h3>
+                <div className="flex flex-col space-y-2">
                   <div className="flex items-center space-x-2">
                     <input 
-                      type="checkbox"
-                      id="enableCleanup"
-                      checked={storageConfig.enableCleanup}
-                      onChange={(e) => setStorageConfig({
-                        ...storageConfig, 
-                        enableCleanup: e.target.checked
-                      })}
+                      type="radio" 
+                      id="local" 
+                      name="storageType" 
+                      value="local" 
+                      checked={storageConfig.defaultStorage === 'local'}
+                      onChange={() => setStorageConfig({...storageConfig, defaultStorage: 'local'})}
+                      className="h-4 w-4"
                     />
-                    <Label htmlFor="enableCleanup">启用自动清理未使用的文件</Label>
+                    <Label htmlFor="local" className="flex items-center">
+                      <HardDrive className="h-4 w-4 mr-2" />
+                      本地存储
+                    </Label>
                   </div>
-
-                  {storageConfig.enableCleanup && (
-                    <div>
-                      <Label htmlFor="cleanupDays">清理周期 (天)</Label>
-                      <Input 
-                        id="cleanupDays"
-                        type="number"
-                        min="1"
-                        max="365"
-                        value={storageConfig.cleanupDays}
-                        onChange={(e) => setStorageConfig({
-                          ...storageConfig, 
-                          cleanupDays: parseInt(e.target.value) || 30
-                        })}
-                      />
-                      <p className="text-sm text-gray-500 mt-1">
-                        超过指定天数未被引用的文件将被自动删除
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    <input 
+                      type="radio" 
+                      id="oss" 
+                      name="storageType" 
+                      value="oss" 
+                      checked={storageConfig.defaultStorage === 'oss'}
+                      onChange={() => setStorageConfig({...storageConfig, defaultStorage: 'oss'})}
+                      className="h-4 w-4"
+                    />
+                    <Label htmlFor="oss" className="flex items-center">
+                      <Cloud className="h-4 w-4 mr-2" />
+                      阿里云OSS存储
+                    </Label>
+                  </div>
                 </div>
-
-                <div className="flex justify-end space-x-2 pt-4 border-t">
-                  <Button 
+                
+                {/* 迁移按钮 */}
+                <div className="pt-4">
+                  <Button
+                    type="button"
                     variant="outline"
-                    onClick={fetchOSSConfig}
+                    onClick={migrateStorage}
+                    disabled={migrating || loading}
+                    className="w-full"
                   >
-                    重置配置
+                    {migrating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <ArrowRightLeft className="mr-2 h-4 w-4" />
+                    执行迁移到{storageConfig.defaultStorage === 'local' 
+                      ? '本地存储' 
+                      : '阿里云OSS'}
                   </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    迁移将把所有文件迁移到选定的存储位置，并更新数据库中的链接。请先选择存储类型，然后点击执行迁移。
+                  </p>
+                </div>
+              </div>
+              
+              {/* 阿里云OSS配置 */}
+              <div className="space-y-4 pt-4 border-t">
+                <h3 className="text-lg font-medium">阿里云OSS配置</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="accessKeyId">Access Key ID</Label>
+                    <Input
+                      id="accessKeyId"
+                      type="text"
+                      value={ossConfig.accessKeyId}
+                      onChange={(e) => setOssConfig({ ...ossConfig, accessKeyId: e.target.value })}
+                      placeholder="LTAI****"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="accessKeySecret">Access Key Secret</Label>
+                    <Input
+                      id="accessKeySecret"
+                      type="text"
+                      value={ossConfig.accessKeySecret}
+                      onChange={(e) => setOssConfig({ ...ossConfig, accessKeySecret: e.target.value })}
+                      placeholder="输入Access Key Secret"
+                      autoComplete="off"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="bucket">Bucket名称</Label>
+                    <Input
+                      id="bucket"
+                      type="text"
+                      value={ossConfig.bucket}
+                      onChange={(e) => setOssConfig({ ...ossConfig, bucket: e.target.value })}
+                      placeholder="my-bucket"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="region">地域</Label>
+                    <Input
+                      id="region"
+                      type="text"
+                      value={ossConfig.region}
+                      onChange={(e) => setOssConfig({ ...ossConfig, region: e.target.value })}
+                      placeholder="cn-hangzhou"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="endpoint">Endpoint</Label>
+                    <Input
+                      id="endpoint"
+                      type="text"
+                      value={ossConfig.endpoint}
+                      onChange={(e) => setOssConfig({ ...ossConfig, endpoint: e.target.value })}
+                      placeholder="oss-cn-hangzhou.aliyuncs.com"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="domain">自定义域名 (可选)</Label>
+                    <Input
+                      id="domain"
+                      type="text"
+                      value={ossConfig.domain}
+                      onChange={(e) => setOssConfig({ ...ossConfig, domain: e.target.value })}
+                      placeholder="cdn.example.com"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2 pt-4">
                   <Button 
-                    onClick={handleSaveOSSConfig}
-                    disabled={saving}
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestOSSConnection}
+                    disabled={loading}
+                  >
+                    <CloudUpload className="mr-2 h-4 w-4" />
+                    测试OSS连接
+                  </Button>
+                  
+                  <Button 
+                    type="submit"
+                    disabled={saving || loading}
                   >
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     <Save className="mr-2 h-4 w-4" />
@@ -443,8 +618,8 @@ export default function StorageSettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </form>
+      </div>
     </div>
   );
 } 

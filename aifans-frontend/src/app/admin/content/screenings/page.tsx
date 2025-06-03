@@ -36,7 +36,7 @@ import {
 import Link from 'next/link';
 import { Textarea } from '@/components/ui/textarea';
 import { processImageUrl } from '@/lib/utils/image-url';
-import { getUploadLimits } from '@/lib/utils/upload-limits';
+import { getUploadLimit, UploadLimit } from '@/lib/utils/upload-limits';
 
 // 自定义防抖函数
 function debounce<T extends (...args: any[]) => any>(
@@ -110,7 +110,10 @@ export default function ScreeningsAdminPage() {
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
   const [showCreatorDropdown, setShowCreatorDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadLimits, setUploadLimits] = useState({ screenings: { videoSize: 500 } });
+  const [uploadLimits, setUploadLimits] = useState<UploadLimit>({ 
+    imageMaxSizeMB: 10, 
+    videoMaxSizeMB: 500 
+  });
   const coverInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   
@@ -126,7 +129,7 @@ export default function ScreeningsAdminPage() {
   useEffect(() => {
     const fetchUploadLimits = async () => {
       try {
-        const limits = await getUploadLimits();
+        const limits = await getUploadLimit('screenings');
         setUploadLimits(limits);
       } catch (error) {
         console.error('获取上传限制失败:', error);
@@ -234,8 +237,8 @@ export default function ScreeningsAdminPage() {
     }
 
     try {
-      // 直接使用fetch调用前端API路由，而不是通过api实例调用后端
-      const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}&limit=10`, {
+      // 修改API路径，使用相对路径避免被代理到后端
+      const response = await fetch(`/api/admin/users?search=${encodeURIComponent(query)}&limit=10`, {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
@@ -247,7 +250,9 @@ export default function ScreeningsAdminPage() {
       }
       
       const data = await response.json();
-      setSearchResults(data?.users || []);
+      // 适配返回数据结构
+      const users = data?.items || [];
+      setSearchResults(users);
       setShowCreatorDropdown(true);
     } catch (error) {
       console.error('搜索创作者失败:', error);
@@ -276,12 +281,18 @@ export default function ScreeningsAdminPage() {
   // 处理文件上传
   const handleFileUpload = (file: File, type: 'cover' | 'video') => {
     if (type === 'cover') {
+      // 检查封面图片大小
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > uploadLimits.imageMaxSizeMB) {
+        toast.error(`封面图片大小不能超过${uploadLimits.imageMaxSizeMB}MB`);
+        return;
+      }
       setFormData({ ...formData, coverFile: file });
     } else {
       // 检查视频文件大小
       const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > (uploadLimits.screenings?.videoSize || 500)) {
-        toast.error(`视频文件大小不能超过${uploadLimits.screenings?.videoSize || 500}MB`);
+      if (fileSizeMB > uploadLimits.videoMaxSizeMB) {
+        toast.error(`视频文件大小不能超过${uploadLimits.videoMaxSizeMB}MB`);
         return;
       }
       setFormData({ ...formData, videoFile: file });
@@ -728,7 +739,7 @@ export default function ScreeningsAdminPage() {
                 )}
               </div>
               <p className="text-xs text-gray-500">
-                支持视频文件，最大{uploadLimits.screenings?.videoSize || 500}MB
+                支持视频文件，最大{uploadLimits.videoMaxSizeMB}MB
               </p>
               <input
                 ref={videoInputRef}
@@ -909,7 +920,7 @@ export default function ScreeningsAdminPage() {
                 )}
               </div>
               <p className="text-xs text-gray-500">
-                如果不上传新视频，将保持原有视频。最大{uploadLimits.screenings?.videoSize || 500}MB
+                如果不上传新视频，将保持原有视频。最大{uploadLimits.videoMaxSizeMB}MB
               </p>
             </div>
             

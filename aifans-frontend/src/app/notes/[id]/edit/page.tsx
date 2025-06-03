@@ -39,7 +39,7 @@ export default function EditNotePage() {
   const { user } = useAuthStore();
   const params = useParams();
   const router = useRouter();
-  const id = Number(params.id);
+  const id = params?.id ? Number(params.id) : 0;
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -47,7 +47,6 @@ export default function EditNotePage() {
         const categoriesData = await noteCategoriesApi.getAllCategories();
         setCategories(categoriesData);
       } catch (error) {
-        console.error('Error fetching categories:', error);
         toast.error('获取分类失败');
       }
     };
@@ -73,7 +72,6 @@ export default function EditNotePage() {
         setCategoryId(note.categoryId.toString());
         setCoverImageUrl(note.coverImageUrl || '');
       } catch (error) {
-        console.error('Error fetching note:', error);
         toast.error('获取笔记失败');
         router.push('/notes');
       } finally {
@@ -112,7 +110,7 @@ export default function EditNotePage() {
           maxSizeMB = limit.imageMaxSizeMB;
         }
       } catch (limitError) {
-        console.warn('获取上传限制失败，使用默认值', limitError);
+        // 使用默认值
       }
 
       // 验证文件大小
@@ -120,12 +118,6 @@ export default function EditNotePage() {
         toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
-
-      console.log('准备上传文件:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
       
       const formData = new FormData();
       formData.append('file', file);
@@ -133,7 +125,6 @@ export default function EditNotePage() {
 
       // 从认证store获取token
       const { token } = useAuthStore.getState();
-      console.log('Token存在:', !!token);
 
       if (!token) {
         toast.error('请先登录');
@@ -148,8 +139,6 @@ export default function EditNotePage() {
         },
       });
 
-      console.log('响应状态:', response.status);
-
       if (!response.ok) {
         let errorData;
         try {
@@ -157,21 +146,18 @@ export default function EditNotePage() {
         } catch (parseError) {
           errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
         }
-        console.error('上传失败详情:', errorData);
         const errorMessage = errorData.error || '未知错误';
         const errorDetails = errorData.details ? ` (${errorData.details})` : '';
         throw new Error(`${errorMessage}${errorDetails}`);
       }
 
       const result = await response.json();
-      console.log('上传成功结果:', result);
       
       // 设置封面URL
       setCoverImageUrl(result.url);
       toast.success(`封面图片上传成功`);
       return [result];
     } catch (error) {
-      console.error('Upload error:', error);
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       toast.error(`封面图片上传失败: ${errorMessage}`);
       return [{ url: '', key: '' }];
@@ -205,7 +191,6 @@ export default function EditNotePage() {
       toast.success('笔记已更新');
       router.push(`/notes/${id}`);
     } catch (error) {
-      console.error('Error updating note:', error);
       toast.error('更新笔记失败');
     } finally {
       setLoadingAction(false);

@@ -6,6 +6,9 @@ import { Request } from 'express';
 import { ChangePasswordDto, PaginationQueryDto, UpdateUserDto } from './dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { mapUserPasswordField } from '../types/prisma-extend';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '../types/prisma-enums';
 
 // 扩展Express的Request接口，添加user属性
 interface RequestWithUser extends Request {
@@ -74,5 +77,15 @@ export class UsersController {
   @ApiResponse({ status: 200, description: '返回收藏列表及分页信息' })
   async getUserFavorites(@CurrentUser() user: any, @Query() query: PaginationQueryDto) {
     return this.usersService.getUserFavorites(user.id, query);
+  }
+
+  @Post('sync-creators')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '同步所有用户信息到创作者信息(仅管理员)' })
+  @ApiResponse({ status: 200, description: '同步成功' })
+  async syncAllCreatorsWithUsers() {
+    return this.usersService.syncAllCreatorsWithUsers();
   }
 }

@@ -7,7 +7,7 @@ import { X, Heart, Bookmark, Download, Copy, Tag, Calendar, Eye, Info, Crown, Ed
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/animations";
-import { processImageUrl } from "@/lib/utils/image-url";
+import { processImageUrl, processUploadImageUrl, processPostImageUrl } from "@/lib/utils/image-url";
 import { getVideoCategoryText } from "@/lib/utils/video-category";
 import { canCopyPrompt, canDownloadPost, getUserPermissions } from "@/lib/utils/permission";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -83,8 +83,11 @@ const ModalContent = memo(({ post, onLike, onFavorite, onClose, userRole, curren
   const canDownload = newPermissions.canCreateContent() && canDownloadPost(userRole, post.allowDownload);
 
   // 处理所有URL，确保正确访问
-  const fileUrl = processImageUrl(post.fileUrl);
+  const fileUrl = processPostImageUrl(post.fileUrl);
   const userAvatarUrl = post.user?.avatarUrl ? processImageUrl(post.user.avatarUrl) : undefined;
+
+  // 处理图片URL，添加时间戳防止缓存问题
+  const imageUrl = processUploadImageUrl(post.fileUrl);
 
   // 优化媒体加载处理
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -202,6 +205,64 @@ const ModalContent = memo(({ post, onLike, onFavorite, onClose, userRole, curren
     }
   }, [mediaRatio]);
 
+  // 视频错误处理
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    // 如果视频加载失败，尝试使用备用路径
+    if (mediaRef.current && post.fileUrl) {
+      try {
+        const video = mediaRef.current as HTMLVideoElement;
+        const currentSrc = video.src;
+        
+        // 如果当前URL是代理URL，尝试直接URL
+        if (currentSrc.includes('/api/proxy')) {
+          const newSrc = post.fileUrl;
+          video.src = newSrc;
+          video.load();
+          setVideoLoaded(false);
+        } else {
+          // 如果已经尝试过直接URL，标记为加载失败
+          setVideoLoaded(false);
+        }
+      } catch (e) {
+        setVideoLoaded(false);
+      }
+    } else {
+      setVideoLoaded(false);
+    }
+  }, [post?.fileUrl]);
+
+  // 下载文件
+  const handleDownload = useCallback(async () => {
+    if (!post || !post.fileUrl) {
+      toast.error('无法下载，文件链接无效');
+      return;
+    }
+    
+    setIsDownloading(true);
+    
+    try {
+      // 获取文件名
+      const fileName = post.fileUrl.split('/').pop() || `${post.id}-${post.type.toLowerCase()}.${post.type === 'IMAGE' ? 'png' : 'mp4'}`;
+      
+      // 创建下载链接
+      const link = document.createElement('a');
+      link.href = post.fileUrl;
+      link.download = fileName;
+      link.target = '_blank';
+      
+      // 触发下载
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success('下载已开始');
+    } catch (error) {
+      toast.error('下载失败，请稍后再试');
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [post]);
+
   return (
     <motion.div 
       className="relative max-w-6xl w-full bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-xl shadow-2xl min-h-[60vh] max-h-[90vh] overflow-visible flex will-change-transform"
@@ -240,6 +301,8 @@ const ModalContent = memo(({ post, onLike, onFavorite, onClose, userRole, curren
                 onLoadedData={handleVideoLoad}
                 onLoadedMetadata={handleVideoLoad}
                 onContextMenu={preventRightClick}
+                onError={handleVideoError}
+                crossOrigin="anonymous"
                 autoPlay
                 loop
                 playsInline
@@ -256,8 +319,8 @@ const ModalContent = memo(({ post, onLike, onFavorite, onClose, userRole, curren
             <>
               <img
                 ref={mediaRef as React.RefObject<HTMLImageElement>}
-                src={fileUrl}
-                alt={post.title || "AI生成图像"}
+                src={imageUrl}
+                alt={post.title || "作品图片"}
                 className={`
                   ${layoutClasses[mediaRatio].mediaClass}
                   transition-opacity duration-300
@@ -510,37 +573,7 @@ const ModalContent = memo(({ post, onLike, onFavorite, onClose, userRole, curren
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={async () => {
-                  try {
-                    setIsDownloading(true);
-                    
-                    // 通过axios下载文件
-                    const response = await axios.get(`/api/posts/${post.id}/download`, {
-                      responseType: 'blob'
-                    });
-                    
-                    // 创建下载链接
-                    const url = window.URL.createObjectURL(new Blob([response.data]));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    
-                    // 确定文件名和扩展名
-                    const filename = post.title || `AI作品_${post.id}`;
-                    const extension = post.type === 'IMAGE' ? 'png' : 'mp4';
-                    
-                    link.setAttribute('download', `${filename}.${extension}`);
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    toast.success('下载成功');
-                  } catch (error) {
-                    console.error('下载失败:', error);
-                    toast.error('下载失败，请稍后再试');
-                  } finally {
-                    setIsDownloading(false);
-                  }
-                }}
+                onClick={handleDownload}
                 className="flex items-center"
                 disabled={isDownloading}
               >

@@ -2,12 +2,14 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { SensitiveWordsCheckService } from '../common/services/sensitive-words.service';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class CreatorsService {
   constructor(
     private prisma: PrismaService,
     private sensitiveWordsCheckService: SensitiveWordsCheckService,
+    private logger: Logger,
   ) {}
 
   async findAll() {
@@ -144,6 +146,72 @@ export class CreatorsService {
     const existingCreators = await this.prisma.creator.findMany();
     for (const creator of existingCreators) {
       await this.updateCreatorScore(creator.userId);
+    }
+  }
+
+  // 批量同步所有创作者信息与用户信息
+  async syncAllCreatorsWithUserInfo(): Promise<{ updated: number, total: number }> {
+    try {
+      this.logger.log('开始同步所有创作者信息与用户信息');
+      
+      // 获取所有创作者记录
+      const creators = await this.prisma.creator.findMany();
+      this.logger.log(`找到 ${creators.length} 个创作者记录`);
+      
+      let updatedCount = 0;
+      
+      // 遍历所有创作者，同步信息
+      for (const creator of creators) {
+        try {
+          // 获取对应的用户信息
+          const user = await this.prisma.user.findUnique({
+            where: { id: creator.userId }
+          });
+          
+          if (!user) {
+            this.logger.warn(`创作者(${creator.id})对应的用户(${creator.userId})不存在，跳过同步`);
+            continue;
+          }
+          
+          // 检查是否需要更新
+          const needUpdate = creator.nickname !== user.nickname || creator.avatarUrl !== user.avatarUrl;
+          
+          if (needUpdate) {
+            // 准备更新数据，处理可能的null值
+            const updateData: any = {
+              updatedAt: new Date()
+            };
+            
+            // 只有当用户昵称不为null时才更新
+            if (user.nickname) {
+              updateData.nickname = user.nickname;
+            }
+            
+            // 只有当用户头像不为null时才更新
+            if (user.avatarUrl) {
+              updateData.avatarUrl = user.avatarUrl;
+            }
+            
+            // 更新创作者信息
+            await this.prisma.creator.update({
+              where: { id: creator.id },
+              data: updateData
+            });
+            
+            this.logger.log(`已同步创作者(${creator.id})的信息与用户(${user.id})信息`);
+            updatedCount++;
+          }
+        } catch (error) {
+          this.logger.error(`同步创作者(${creator.id})信息失败:`, error);
+          // 继续处理下一个，不中断整个流程
+        }
+      }
+      
+      this.logger.log(`同步完成，共更新了 ${updatedCount}/${creators.length} 个创作者信息`);
+      return { updated: updatedCount, total: creators.length };
+    } catch (error) {
+      this.logger.error('批量同步创作者信息失败:', error);
+      throw error;
     }
   }
 

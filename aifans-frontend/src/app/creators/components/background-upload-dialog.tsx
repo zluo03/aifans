@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { FileUpload } from '@/components/ui/file-upload';
@@ -15,10 +15,63 @@ export function BackgroundUploadDialog({ open, onOpenChange, onSuccess }: Backgr
   const [fileUrl, setFileUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { token, user } = useAuthStore();
+  const { token, user, forceRefreshUserProfile } = useAuthStore();
+  const [localToken, setLocalToken] = useState<string | null>(null);
+
+  // 当对话框打开时，尝试从localStorage获取最新token
+  useEffect(() => {
+    if (open) {
+      // 尝试强制刷新用户资料，确保token是最新的
+      forceRefreshUserProfile();
+      
+      try {
+        // 直接从localStorage获取最新的token
+        const authStorage = localStorage.getItem('auth-storage');
+        if (authStorage) {
+          const { state } = JSON.parse(authStorage);
+          if (state?.token) {
+            const freshToken = state.token.startsWith('Bearer ') ? state.token : `Bearer ${state.token}`;
+            setLocalToken(freshToken);
+            console.log('从localStorage获取到token:', freshToken.substring(0, 15) + '...');
+          }
+        }
+      } catch (error) {
+        console.error('获取localStorage中的token失败:', error);
+      }
+    }
+  }, [open, forceRefreshUserProfile]);
+
+  const getAuthToken = (): string | null => {
+    // 首先使用localToken（从localStorage直接获取的最新token）
+    if (localToken) {
+      return localToken;
+    }
+    
+    // 其次使用store中的token
+    if (token) {
+      return token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+    }
+    
+    // 最后尝试从localStorage再次获取
+    try {
+      const authStorage = localStorage.getItem('auth-storage');
+      if (authStorage) {
+        const { state } = JSON.parse(authStorage);
+        if (state?.token) {
+          return state.token.startsWith('Bearer ') ? state.token : `Bearer ${state.token}`;
+        }
+      }
+    } catch (error) {
+      console.error('获取localStorage中的token失败:', error);
+    }
+    
+    return null;
+  };
 
   const handleUpload = async (files: File[]) => {
-    if (!token) {
+    const currentToken = getAuthToken();
+    
+    if (!currentToken) {
       toast.error('请先登录');
       return [{ url: '', key: '' }];
     }
@@ -39,12 +92,15 @@ export function BackgroundUploadDialog({ open, onOpenChange, onSuccess }: Backgr
     formData.append('folder', 'creators/backgrounds');
     
     try {
+      console.log('上传背景图片，使用token:', currentToken.substring(0, 15) + '...');
+      
       const response = await fetch('/api/storage/upload', {
         method: 'POST',
         body: formData,
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': currentToken,
         },
+        cache: 'no-cache',
       });
       
       if (!response.ok) {
@@ -79,35 +135,57 @@ export function BackgroundUploadDialog({ open, onOpenChange, onSuccess }: Backgr
 
     setSaving(true);
     try {
-      // 获取当前创作者信息
-      const response = await fetch(`/api/creators/user/${user.id}`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      let currentData = {};
-      if (response.ok) {
-        currentData = await response.json();
+      // 获取认证token
+      const authToken = getAuthToken();
+      if (!authToken) {
+        throw new Error('认证失败，请重新登录');
       }
 
-      // 更新背景图片
-      const updateResponse = await fetch('/api/creators', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...currentData,
-          backgroundUrl: fileUrl
-        })
+      // 构建请求数据 - 移除了userId字段，因为后端从token中获取用户ID
+      const payload = {
+        nickname: user.nickname || '未命名用户', // nickname是必填字段
+        backgroundUrl: fileUrl,
+        avatarUrl: user.avatarUrl || ''
+      };
+
+      console.log('发送更新请求，数据:', {
+        nickname: payload.nickname,
+        backgroundUrl: payload.backgroundUrl?.substring(0, 30) + '...'
       });
 
-      if (!updateResponse.ok) {
-        const errorData = await updateResponse.json();
-        throw new Error(errorData.error || '保存失败');
+      // 发送请求
+      const response = await fetch('/api/creators', {
+        method: 'POST',
+        headers: {
+          'Authorization': authToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        cache: 'no-cache'
+      });
+
+      console.log('API响应状态:', response.status, response.statusText);
+
+      // 处理响应
+      if (!response.ok) {
+        let errorText = `保存失败 (HTTP ${response.status})`;
+        try {
+          const responseText = await response.text();
+          console.error('错误响应内容:', responseText);
+          
+          if (responseText && responseText.trim()) {
+            try {
+              const errorJson = JSON.parse(responseText);
+              errorText = errorJson.message || errorJson.error || errorJson.details || errorText;
+            } catch (e) {
+              errorText = responseText;
+            }
+          }
+        } catch (e) {
+          console.error('读取错误响应失败:', e);
+        }
+        
+        throw new Error(errorText);
       }
 
       toast.success('背景图片保存成功');
@@ -118,7 +196,15 @@ export function BackgroundUploadDialog({ open, onOpenChange, onSuccess }: Backgr
       onOpenChange(false);
     } catch (error: any) {
       console.error('保存背景图片失败:', error);
-      toast.error(error.message || '保存背景图片失败');
+      
+      let errorMessage = '保存背景图片失败';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

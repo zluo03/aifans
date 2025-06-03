@@ -6,10 +6,12 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../types/prisma-enums';
-import { Response } from 'express';
+import { Response as ExpressResponse } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { createReadStream } from 'fs';
+import fetch from 'node-fetch';
 
 // 定义 API 返回的迁移结果类型
 interface MigrationResult {
@@ -55,16 +57,66 @@ export class StorageController {
   })
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
-    @Query('folder') folder: string = 'general',
+    @Query('folder') queryFolder: string,
+    @Body() body: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
   ) {
-    return this.storageService.uploadFile(file, folder);
+    // 设置CORS头
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    if (!file) {
+      console.error('上传失败: 未提供文件');
+      return res.status(400).json({
+        error: '上传失败',
+        details: '未提供文件'
+      });
+    }
+    
+    // 优先使用表单中的folder，其次使用查询参数中的folder，最后使用默认值
+    const folder = body?.folder || queryFolder || 'general';
+    
+    console.log('文件上传请求:', {
+      文件名: file?.originalname,
+      文件大小: file?.size,
+      文件类型: file?.mimetype,
+      目标文件夹: folder,
+      表单数据: body
+    });
+    
+    try {
+      // 检查uploads目录是否存在
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        console.log(`创建uploads目录: ${uploadsDir}`);
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // 检查目标文件夹是否存在
+      const targetDir = path.join(uploadsDir, folder);
+      if (!fs.existsSync(targetDir)) {
+        console.log(`创建目标目录: ${targetDir}`);
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      const result = await this.storageService.uploadFile(file, folder);
+      console.log('文件上传成功:', result);
+      return result;
+    } catch (error) {
+      console.error('文件上传失败:', error);
+      return res.status(500).json({
+        error: '文件上传失败',
+        details: error.message || '服务器内部错误'
+      });
+    }
   }
 
   @Get('serve')
   @ApiOperation({ summary: '获取本地存储的文件' })
   async serveFile(
     @Query('key') key: string, 
-    @Res() res: Response
+    @Res() res: ExpressResponse
   ) {
     if (!key) {
       return res.status(400).json({ error: 'Missing key parameter' });
@@ -146,7 +198,7 @@ export class StorageController {
     @Query('t') token: string,
     @Query('p') videoPath: string,
     @Headers('referer') referer: string,
-    @Res() res: Response
+    @Res() res: ExpressResponse
   ) {
     try {
       if (!token || !videoPath) {
@@ -249,7 +301,7 @@ export class StorageController {
   @ApiOperation({ summary: '获取用户头像' })
   async getAvatar(
     @Param('filename') filename: string,
-    @Res() res: Response
+    @Res() res: ExpressResponse
   ) {
     try {
       console.log(`获取头像请求: ${filename}`);
@@ -347,5 +399,59 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File
   ) {
     return this.storageService.uploadFile(file, 'avatar');
+  }
+
+  /**
+   * 视频代理接口 - 处理前端的/api/proxy/video/:key请求
+   */
+  @Get('proxy/video/:key')
+  @ApiOperation({ summary: '视频代理接口' })
+  async proxyVideo(
+    @Param('key') key: string,
+    @Res() res: ExpressResponse
+  ) {
+    try {
+      if (!key) {
+        return res.status(400).json({ error: '缺少视频key参数' });
+      }
+
+      // 解码key
+      const decodedKey = decodeURIComponent(key);
+      
+      // 构建阿里云OSS URL
+      const ossBaseUrl = 'https://aifansbeijing.oss-cn-beijing.aliyuncs.com/';
+      const videoUrl = `${ossBaseUrl}${decodedKey}`;
+
+      console.log(`代理视频请求: ${videoUrl}`);
+
+      // 从OSS获取视频内容
+      const response = await fetch(videoUrl);
+      
+      if (!response.ok) {
+        console.error(`OSS请求失败: ${response.status} ${response.statusText}`);
+        return res.status(response.status).json({ error: '视频资源不存在或无法访问' });
+      }
+
+      // 获取视频内容
+      const buffer = await response.arrayBuffer();
+      
+      // 设置正确的头部
+      res.set({
+        'Content-Type': response.headers.get('Content-Type') || 'video/mp4',
+        'Content-Length': response.headers.get('Content-Length') || '',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=86400', // 缓存1天
+        'Access-Control-Allow-Origin': '*', // 允许任何来源访问
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Range',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range',
+      });
+
+      // 返回视频内容
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error('视频代理请求失败:', error);
+      return res.status(500).json({ error: '视频代理请求处理失败' });
+    }
   }
 } 

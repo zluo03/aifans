@@ -3,11 +3,12 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { motion } from "framer-motion";
 import { Heart, Bookmark } from "lucide-react";
-import { processPostImageUrl } from "@/lib/utils/image-url";
+import { processPostImageUrl, processUploadImageUrl } from "@/lib/utils/image-url";
 import { getVideoCategoryText } from "@/lib/utils/video-category";
 import { usePermissions } from "@/hooks/use-permissions";
 import './media-protection.css';
 import Image from "next/image";
+import { cn } from '@/lib/utils';
 
 interface Post {
   id: number;
@@ -72,6 +73,7 @@ export default memo(function PostCard({
 }: PostCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [error, setError] = useState(false);
   const mediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   
@@ -171,10 +173,12 @@ export default memo(function PostCard({
       try {
         // 确保视频有效后再播放
         if (video.readyState >= 2) {
-          video.play().catch(e => console.warn("视频播放失败:", e));
+          video.play().catch(e => {
+            // 静默失败，不显示错误
+          });
         }
       } catch (err) {
-        console.error("播放视频时出错:", err);
+        // 静默失败，不显示错误
       }
     }
     
@@ -182,7 +186,7 @@ export default memo(function PostCard({
       try {
         video.pause();
       } catch (err) {
-        console.error("暂停视频时出错:", err);
+        // 静默失败，不显示错误
       }
     }
     
@@ -199,6 +203,87 @@ export default memo(function PostCard({
   const fileUrl = processPostImageUrl(post.fileUrl);
   const thumbnailUrl = post.thumbnailUrl ? processPostImageUrl(post.thumbnailUrl) : undefined;
   const platformLogoUrl = post.aiPlatform.logoUrl ? processPostImageUrl(post.aiPlatform.logoUrl) : undefined;
+
+  // 使用代理URL处理视频，避免CORS问题
+  const getProxiedVideoUrl = (url: string) => {
+    // 如果URL包含阿里云OSS域名，使用代理
+    if (url.includes('oss-cn-beijing.aliyuncs.com')) {
+      // 从原始URL中提取key部分
+      const key = url.split('aliyuncs.com/')[1]?.split('?')[0];
+      if (key) {
+        return `/api/storage/proxy/video/${encodeURIComponent(key)}`;
+      }
+    }
+    return url;
+  };
+
+  // 渲染媒体内容
+  const renderMedia = () => {
+    if (post.type === 'IMAGE') {
+      // 使用processUploadImageUrl添加时间戳防止缓存问题
+      const imageUrl = processUploadImageUrl(post.fileUrl);
+      return (
+        <Image
+          ref={mediaRef as React.Ref<HTMLImageElement>}
+          src={imageUrl}
+          alt={post.title || '作品图片'}
+          width={400}
+          height={400}
+          className={cn(
+            "w-full h-full object-contain transition-opacity duration-300",
+            imageLoaded ? "opacity-100" : "opacity-0"
+          )}
+          onLoad={handleImageLoad}
+          onError={() => setError(true)}
+          onContextMenu={handleContextMenu}
+          loading="lazy"
+        />
+      );
+    } else if (post.type === 'VIDEO') {
+      // 使用代理URL避免CORS问题
+      const videoUrl = getProxiedVideoUrl(fileUrl);
+      return (
+        <video
+          ref={mediaRef as React.Ref<HTMLVideoElement>}
+          src={videoUrl}
+          muted
+          loop
+          crossOrigin="anonymous"
+          className={cn(
+            "w-full h-full object-contain transition-opacity duration-300",
+            imageLoaded ? "opacity-100" : "opacity-0"
+          )}
+          onLoadedMetadata={handleVideoLoad}
+          onError={(e) => {
+            // 如果视频加载失败，尝试使用备用路径
+            if (mediaRef.current && post.fileUrl) {
+              try {
+                const video = mediaRef.current as HTMLVideoElement;
+                const currentSrc = video.src;
+                
+                // 如果当前URL是代理URL，尝试直接URL
+                if (currentSrc.includes('/api/proxy')) {
+                  const newSrc = post.fileUrl;
+                  video.src = newSrc;
+                  video.load();
+                }
+              } catch (e) {
+                // 如果已经尝试过直接URL，标记为加载失败
+                setError(true);
+              }
+            } else {
+              setError(true);
+            }
+          }}
+          onContextMenu={handleContextMenu}
+          controlsList="nodownload"
+          disablePictureInPicture
+          playsInline
+        />
+      );
+    }
+    return null;
+  };
 
   return (
     <motion.div 
@@ -228,51 +313,7 @@ export default memo(function PostCard({
           onContextMenu={handleContextMenu}
         >
           {/* 媒体内容 */}
-          {post.type === "IMAGE" ? (
-            <Image
-              ref={mediaRef as React.Ref<HTMLImageElement>}
-              src={fileUrl}
-              alt={post.title || "AI生成的图片"}
-              width={400}
-              height={400}
-              className={`w-full h-auto object-cover transition-all duration-500 select-none pointer-events-none ${
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              }`}
-              onLoad={handleImageLoad}
-              onContextMenu={handleContextMenu}
-              loading="lazy"
-              quality={75}
-              style={{
-                objectFit: 'cover',
-                userSelect: 'none',
-                pointerEvents: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none'
-              }}
-            />
-          ) : (
-            <video
-              ref={mediaRef as React.Ref<HTMLVideoElement>}
-              src={fileUrl}
-              muted
-              loop
-              className={`w-full h-auto object-cover transition-all duration-500 select-none pointer-events-none ${
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              }`}
-              onLoadedMetadata={handleVideoLoad}
-              onContextMenu={handleContextMenu}
-              preload="metadata"
-              style={{
-                objectFit: 'cover',
-                userSelect: 'none',
-                pointerEvents: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none'
-              }}
-            />
-          )}
+          {renderMedia()}
           
           {/* 渐变遮罩 */}
           <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-black/50 opacity-70 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />

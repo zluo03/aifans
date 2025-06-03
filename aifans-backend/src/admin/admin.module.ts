@@ -13,7 +13,7 @@ import { MailModule } from '../mail/mail.module';
 import { AiPlatformsController } from './ai-platforms/ai-platforms.controller';
 import { AIPlatformsService } from './ai-platforms/ai-platforms.service';
 import { UploadLimitService } from './upload-limit.service';
-import { UploadLimitController } from './upload-limit.controller';
+import { UploadLimitController, PublicUploadLimitController } from './upload-limit.controller';
 import { SensitiveWordsController } from './sensitive-words.controller';
 import { SensitiveWordsService } from './sensitive-words.service';
 import { AdminMembershipController, AdminPaymentSettingsController } from './admin-membership.controller';
@@ -30,6 +30,7 @@ import { PaymentsModule } from '../payments/payments.module';
     AdminMailController, 
     AiPlatformsController, 
     UploadLimitController,
+    PublicUploadLimitController,
     SensitiveWordsController,
     AdminMembershipController,
     AdminSettingsController,
@@ -51,6 +52,7 @@ import { PaymentsModule } from '../payments/payments.module';
     AdminAnnouncementsService, 
     AdminMailService, 
     AIPlatformsService, 
+    UploadLimitService,
     SensitiveWordsService,
     AdminMembershipService,
   ],

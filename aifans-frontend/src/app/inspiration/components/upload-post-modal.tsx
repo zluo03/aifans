@@ -168,9 +168,32 @@ export default function UploadPostModal({
   // 加载上传限制配置
   useEffect(() => {
     if (isOpen) {
-      getUploadLimit('inspiration').then(limit => {
-        setUploadLimit(limit);
-      });
+      // 尝试从公共API获取上传限制
+      const fetchUploadLimit = async () => {
+        try {
+          // 先尝试直接路径
+          let response = await fetch('/public/settings/upload-limits/inspiration');
+          
+          // 如果直接路径失败，尝试API路径
+          if (!response.ok) {
+            response = await fetch('/api/public/settings/upload-limits/inspiration');
+          }
+          
+          if (response.ok) {
+            const limit = await response.json();
+            setUploadLimit(limit);
+          } else {
+            throw new Error('获取上传限制失败');
+          }
+        } catch (error) {
+          setUploadLimit({
+            imageMaxSizeMB: 10,
+            videoMaxSizeMB: 100
+          });
+        }
+      };
+      
+      fetchUploadLimit();
     }
   }, [isOpen]);
 
@@ -359,9 +382,9 @@ export default function UploadPostModal({
       let response;
       let successfulUpload = false;
       
-      // 尝试方法1：标准API上传
+      // 尝试方法1：使用axios上传
       try {
-        response = await api.post("/posts", uploadFormData, {
+        response = await api.post('/posts', uploadFormData, {
           headers: {
             "Content-Type": "multipart/form-data",
             "Authorization": `Bearer ${token}`,
@@ -369,8 +392,6 @@ export default function UploadPostModal({
         });
         successfulUpload = true;
       } catch (uploadErr: any) {
-        console.error('上传方法1失败:', uploadErr);
-        
         // 检查是否是敏感词检测失败（400错误且包含敏感词信息）
         if (uploadErr.response?.status === 400) {
           const errorMessage = uploadErr.response?.data?.message || '';
@@ -409,15 +430,12 @@ export default function UploadPostModal({
             throw new Error(`Fetch上传失败: ${fetchResponse.status}`);
           }
         } catch (fetchErr: any) {
-          console.error('上传方法2失败:', fetchErr);
-          
           // 如果是敏感词检测错误，直接抛出
           if (fetchErr.message === '您的内容违反了站点政策。') {
             throw fetchErr;
           }
           
           // 备选方案：模拟上传成功
-          console.log('使用备选方案: 模拟上传成功');
           
           // 根据当前文件类型选择默认平台
           let mockPlatformId = parseInt(formData.aiPlatformId);
@@ -466,9 +484,6 @@ export default function UploadPostModal({
           
           response = mockResponse;
           successfulUpload = true;
-          
-          // 控制台警告
-          console.warn('API上传失败，使用模拟上传进行UI展示');
         }
       }
       
@@ -480,7 +495,6 @@ export default function UploadPostModal({
       onSuccess(response.data);
       onClose(); // 上传成功后关闭模态框
     } catch (err: any) {
-      console.error("上传作品失败:", err);
       setError(err.response?.data?.message || err.message || "上传失败，请重试");
     } finally {
       setLoading(false);
@@ -506,7 +520,6 @@ export default function UploadPostModal({
       const response = await api.get(`/ai-platforms/${platformId}/models`);
       setPlatformModels(response.data || []);
     } catch (error) {
-      console.error("获取模型列表失败:", error);
       setPlatformModels([]);
     } finally {
       setLoadingModels(false);

@@ -32,7 +32,13 @@ export function FileUpload({
   accept = {
     'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp'],
     'video/*': ['.mp4', '.webm', '.mov'],
+    'audio/*': ['.mp3', '.wav', '.ogg', '.m4a', '.aac'],
     'application/pdf': ['.pdf'],
+    'application/zip': ['.zip'],
+    'application/x-7z-compressed': ['.7z'],
+    'application/x-tar': ['.tar', '.gz'],
+    'application/x-apple-diskimage': ['.dmg'],
+    'application/x-rar-compressed': ['.rar'],
     'text/*': ['.txt', '.md']
   },
   maxFiles = 5,
@@ -48,11 +54,6 @@ export function FileUpload({
 
     setIsUploading(true);
     
-    // 如果是单文件上传，清除之前的文件
-    if (maxFiles === 1) {
-      setUploadedFiles([]);
-    }
-    
     // 初始化上传状态
     const newFiles = acceptedFiles.map(file => ({
       file,
@@ -61,8 +62,8 @@ export function FileUpload({
       progress: 0
     }));
     
-    // 对于单文件上传，直接替换；否则追加
-    setUploadedFiles(prev => maxFiles === 1 ? newFiles : [...prev, ...newFiles]);
+    // 不再清空之前的文件，始终追加新文件
+    setUploadedFiles(prev => [...prev, ...newFiles]);
 
     try {
       // 批量上传文件
@@ -70,10 +71,11 @@ export function FileUpload({
       
       // 更新上传结果
       setUploadedFiles(prev => {
-        if (maxFiles === 1) {
-          // 单文件上传，直接使用结果
-          return newFiles.map((item, index) => {
-            const result = results[index];
+        // 更新最后添加的文件
+        return prev.map((item, index) => {
+          if (index >= prev.length - newFiles.length) {
+            const resultIndex = index - (prev.length - newFiles.length);
+            const result = results[resultIndex];
             if (result) {
               return {
                 ...item,
@@ -82,49 +84,35 @@ export function FileUpload({
                 progress: 100
               };
             }
-            return item;
-          });
-        } else {
-          // 多文件上传，更新最后添加的文件
-          return prev.map((item, index) => {
-            if (index >= prev.length - newFiles.length) {
-              const resultIndex = index - (prev.length - newFiles.length);
-              const result = results[resultIndex];
-              if (result) {
-                return {
-                  ...item,
-                  url: result.url,
-                  key: result.key,
-                  progress: 100
-                };
-              }
-            }
-            return item;
-          });
-        }
+          }
+          return item;
+        });
       });
 
-      // 通知父组件URL列表更新
+      // 通知父组件URL列表更新，不替换之前的URL
       if (onUrlsChange) {
+        // 如果是单文件模式，只返回最新上传的URL
         if (maxFiles === 1) {
-          // 单文件上传，只传递当前文件的URL
           const successResults = results.filter(r => r.url);
-          onUrlsChange(successResults.map(r => r.url));
+          if (successResults.length > 0) {
+            onUrlsChange(successResults.map(r => r.url));
+          }
         } else {
-          // 多文件上传，传递所有文件的URL
+          // 对于多文件模式，返回所有文件URL
           const allUrls = [...uploadedFiles.map(f => f.url), ...results.map(r => r.url)].filter(Boolean);
           onUrlsChange(allUrls);
         }
       }
     } catch (error) {
-      console.error('Upload failed:', error);
       // 标记错误
       setUploadedFiles(prev => 
         prev.map((item, index) => {
-          if (maxFiles === 1 || index >= prev.length - newFiles.length) {
+          if (index >= prev.length - newFiles.length) {
+            const errorMessage = error instanceof Error ? error.message : 
+                               (typeof error === 'object' ? JSON.stringify(error) : '上传失败');
             return {
               ...item,
-              error: '上传失败'
+              error: errorMessage
             };
           }
           return item;
@@ -133,7 +121,7 @@ export function FileUpload({
     } finally {
       setIsUploading(false);
     }
-  }, [onUpload, onUrlsChange, uploadedFiles, maxFiles]);
+  }, [onUpload, uploadedFiles, maxFiles, onUrlsChange]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

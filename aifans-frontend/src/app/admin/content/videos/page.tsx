@@ -100,12 +100,23 @@ export default function UploadManagementPage() {
   const fetchUploadLimits = async () => {
     try {
       setLoading(true);
+      console.log('开始获取上传配置...');
       const response = await api.get('/admin/settings/upload-limits');
-      if (response.data.success) {
-        setUploadLimits(response.data.limits);
+      console.log('获取到的原始响应:', response);
+      
+      if (response.data && response.data.limits) {
+        console.log('获取到的上传限制配置:', JSON.stringify(response.data.limits, null, 2));
+        // 深度复制数据以避免引用问题
+        const limits = JSON.parse(JSON.stringify(response.data.limits));
+        setUploadLimits(limits);
+        console.log('设置后的上传限制:', JSON.stringify(limits, null, 2));
+      } else {
+        console.warn('API返回数据格式不符合预期:', JSON.stringify(response.data, null, 2));
+        toast.error('获取上传配置失败: 返回数据格式不符合预期');
       }
     } catch (error) {
       console.error('获取上传配置失败:', error);
+      toast.error('获取上传配置失败');
       // 使用默认配置
     } finally {
       setLoading(false);
@@ -129,31 +140,53 @@ export default function UploadManagementPage() {
     setCreatorLoading(true);
     try {
       const res = await api.get('/admin/settings/upload-limits/creator');
-      setCreatorLimit(res.data);
+      if (res.data) {
+        console.log('获取到的个人主页上传限制:', res.data);
+        setCreatorLimit(res.data);
+      } else {
+        console.warn('获取个人主页上传限制返回格式不符合预期:', res.data);
+        toast.error('获取个人主页上传限制失败: 返回数据格式不符合预期');
+      }
     } catch (e) {
-      // ignore
+      console.error('获取个人主页上传限制失败:', e);
+      toast.error('获取个人主页上传限制失败');
+      // 使用默认配置
     } finally {
       setCreatorLoading(false);
     }
   };
 
+  // 获取所有配置
+  const fetchAllConfigurations = async () => {
+    toast.info('正在刷新配置数据...');
+    try {
+      // 依次获取所有配置
+      await fetchUploadLimits();
+      await fetchUploadStats();
+      await fetchCreatorLimit();
+      toast.success('配置数据刷新成功');
+    } catch (error) {
+      console.error('刷新配置失败:', error);
+      toast.error('刷新配置失败');
+    }
+  };
+
+  // 初始化加载
   useEffect(() => {
-    fetchUploadLimits();
-    fetchUploadStats();
-    fetchCreatorLimit();
+    fetchAllConfigurations();
   }, []);
 
   // 保存上传限制配置
   const handleSaveUploadLimits = async () => {
     try {
       setSaving(true);
-      console.log('保存上传配置:', uploadLimits); // 调试日志
+      console.log('准备保存的上传配置:', JSON.stringify(uploadLimits, null, 2)); // 调试日志
       
       const response = await api.post('/admin/settings/upload-limits', {
         limits: uploadLimits
       });
       
-      console.log('API响应:', response.data); // 调试日志
+      console.log('API响应:', JSON.stringify(response.data, null, 2)); // 调试日志
       
       if (response.data.success) {
         toast.success('上传限制配置已更新');
@@ -213,7 +246,7 @@ export default function UploadManagementPage() {
             <p className="text-muted-foreground">设置各模块的文件大小限制（无数量限制）</p>
           </div>
         </div>
-        <Button onClick={() => { fetchUploadLimits(); fetchUploadStats(); }}>
+        <Button onClick={fetchAllConfigurations}>
           <RefreshCw className="mr-2 h-4 w-4" />
           刷新数据
         </Button>
@@ -660,7 +693,7 @@ export default function UploadManagementPage() {
       <div className="flex justify-end space-x-2 mt-6">
         <Button 
           variant="outline"
-          onClick={() => { fetchUploadLimits(); fetchUploadStats(); }}
+          onClick={fetchAllConfigurations}
         >
           重置配置
         </Button>

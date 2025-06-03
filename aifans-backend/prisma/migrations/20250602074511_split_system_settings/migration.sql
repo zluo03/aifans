@@ -1,19 +1,28 @@
 -- CreateTable
 CREATE TABLE `users` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `username` VARCHAR(191) NOT NULL,
-    `nickname` VARCHAR(191) NOT NULL,
-    `email` VARCHAR(191) NOT NULL,
-    `passwordHash` VARCHAR(191) NOT NULL,
+    `username` VARCHAR(191) NULL,
+    `nickname` VARCHAR(191) NULL,
+    `email` VARCHAR(191) NULL,
     `role` ENUM('NORMAL', 'PREMIUM', 'LIFETIME', 'ADMIN') NOT NULL DEFAULT 'NORMAL',
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `status` ENUM('ACTIVE', 'MUTED', 'BANNED') NOT NULL DEFAULT 'ACTIVE',
     `avatarUrl` VARCHAR(191) NULL,
     `premiumExpiryDate` DATETIME(3) NULL,
+    `isWechatUser` BOOLEAN NOT NULL DEFAULT false,
+    `password` VARCHAR(191) NULL,
+    `wechatAvatar` VARCHAR(191) NULL,
+    `wechatNickname` VARCHAR(191) NULL,
+    `wechatOpenId` VARCHAR(191) NULL,
+    `wechatUnionId` VARCHAR(191) NULL,
+    `tempOpenId` VARCHAR(191) NULL,
 
     UNIQUE INDEX `users_username_key`(`username`),
     UNIQUE INDEX `users_email_key`(`email`),
+    UNIQUE INDEX `users_wechatOpenId_key`(`wechatOpenId`),
+    UNIQUE INDEX `users_wechatUnionId_key`(`wechatUnionId`),
+    UNIQUE INDEX `users_tempOpenId_key`(`tempOpenId`),
     INDEX `users_role_idx`(`role`),
     INDEX `users_status_idx`(`status`),
     INDEX `users_nickname_idx`(`nickname`),
@@ -460,6 +469,7 @@ CREATE TABLE `announcement_views` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     INDEX `announcement_views_userId_viewDate_idx`(`userId`, `viewDate`),
+    INDEX `announcement_views_announcementId_fkey`(`announcementId`),
     UNIQUE INDEX `announcement_views_userId_announcementId_viewDate_key`(`userId`, `announcementId`, `viewDate`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -512,11 +522,53 @@ CREATE TABLE `payment_settings` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `wechat_verification_codes` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `code` VARCHAR(191) NOT NULL,
+    `openId` VARCHAR(191) NOT NULL,
+    `used` BOOLEAN NOT NULL DEFAULT false,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `expiredAt` DATETIME(3) NOT NULL,
+
+    INDEX `wechat_verification_codes_code_idx`(`code`),
+    INDEX `wechat_verification_codes_openId_idx`(`openId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `oss_config` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `accessKeyId` VARCHAR(191) NOT NULL,
+    `accessKeySecret` VARCHAR(191) NOT NULL,
+    `bucket` VARCHAR(191) NOT NULL,
+    `region` VARCHAR(191) NOT NULL DEFAULT 'cn-hangzhou',
+    `endpoint` VARCHAR(191) NOT NULL,
+    `domain` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `storage_config` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `defaultStorage` VARCHAR(191) NOT NULL DEFAULT 'local',
+    `maxFileSize` INTEGER NOT NULL DEFAULT 100,
+    `enableCleanup` BOOLEAN NOT NULL DEFAULT false,
+    `cleanupDays` INTEGER NOT NULL DEFAULT 30,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `ai_models` ADD CONSTRAINT `ai_models_aiPlatformId_fkey` FOREIGN KEY (`aiPlatformId`) REFERENCES `ai_platforms`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `posts` ADD CONSTRAINT `posts_aiPlatformId_fkey` FOREIGN KEY (`aiPlatformId`) REFERENCES `ai_platforms`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `posts` ADD CONSTRAINT `posts_aiPlatformId_fkey` FOREIGN KEY (`aiPlatformId`) REFERENCES `ai_platforms`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `posts` ADD CONSTRAINT `posts_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -579,10 +631,10 @@ ALTER TABLE `SpiritPostClaim` ADD CONSTRAINT `SpiritPostClaim_userId_fkey` FOREI
 ALTER TABLE `SpiritPostMessage` ADD CONSTRAINT `SpiritPostMessage_postId_fkey` FOREIGN KEY (`postId`) REFERENCES `SpiritPost`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `SpiritPostMessage` ADD CONSTRAINT `SpiritPostMessage_senderId_fkey` FOREIGN KEY (`senderId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `SpiritPostMessage` ADD CONSTRAINT `SpiritPostMessage_receiverId_fkey` FOREIGN KEY (`receiverId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `SpiritPostMessage` ADD CONSTRAINT `SpiritPostMessage_receiverId_fkey` FOREIGN KEY (`receiverId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `SpiritPostMessage` ADD CONSTRAINT `SpiritPostMessage_senderId_fkey` FOREIGN KEY (`senderId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Creator` ADD CONSTRAINT `Creator_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -591,10 +643,10 @@ ALTER TABLE `Creator` ADD CONSTRAINT `Creator_userId_fkey` FOREIGN KEY (`userId`
 ALTER TABLE `UserDailyLogin` ADD CONSTRAINT `UserDailyLogin_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `announcement_views` ADD CONSTRAINT `announcement_views_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `announcement_views` ADD CONSTRAINT `announcement_views_announcementId_fkey` FOREIGN KEY (`announcementId`) REFERENCES `announcements`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `announcement_views` ADD CONSTRAINT `announcement_views_announcementId_fkey` FOREIGN KEY (`announcementId`) REFERENCES `announcements`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `announcement_views` ADD CONSTRAINT `announcement_views_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `redemption_codes` ADD CONSTRAINT `redemption_codes_used_by_user_id_fkey` FOREIGN KEY (`used_by_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

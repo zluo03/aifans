@@ -31,19 +31,8 @@ const uploadFile = async (file: File): Promise<string> => {
     const isAudio = file.type.startsWith('audio/');
     const isArchive = file.name.match(/\.(zip|7z|tar|gz|rar|dmg)$/i) !== null;
     
-    console.log('准备上传文件:', {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      isImage,
-      isVideo,
-      isAudio,
-      isArchive
-    });
-    
     // 从认证store获取token
     const { token } = useAuthStore.getState();
-    console.log('Token存在:', !!token);
 
     if (!token) {
       toast.error('请先登录');
@@ -68,7 +57,6 @@ const uploadFile = async (file: File): Promise<string> => {
         maxSizeMB = 500;
       }
     } catch (limitError) {
-      console.warn('获取上传限制失败，使用默认值', limitError);
       // 使用默认值
       if (isImage) maxSizeMB = 5; // 图片默认5MB
       if (isVideo) maxSizeMB = 50; // 视频默认50MB
@@ -107,15 +95,12 @@ const uploadFile = async (file: File): Promise<string> => {
       }
     });
 
-    console.log('上传响应:', response);
-
     if (!response || !response.data || !response.data.url) {
       throw new Error('上传失败：未返回文件URL');
     }
 
     // 直接返回原始URL，不添加时间戳
     const url = response.data.url;
-    console.log('上传成功，文件URL:', url);
     
     const fileTypeText = isImage ? '图片' : 
                          isVideo ? '视频' : 
@@ -124,7 +109,6 @@ const uploadFile = async (file: File): Promise<string> => {
     toast.success(`${fileTypeText}上传成功`);
     return url;
   } catch (error) {
-    console.error('文件上传失败:', error);
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.error || error.message;
       toast.error(`文件上传失败: ${message}`);
@@ -167,12 +151,10 @@ export default function BlockNoteEditorComponent({
     if (initialContent && isMounted) {
       try {
         const parsed = JSON.parse(initialContent);
-        console.log("解析的初始内容:", parsed);
         setBlocks(parsed);
         // 延迟设置ready状态，确保DOM已经准备好
         setTimeout(() => setIsReady(true), 100);
       } catch (e) {
-        console.log("内容不是JSON格式，作为纯文本处理");
         // 如果不是 JSON，尝试转换为块格式
         setBlocks([
           {
@@ -197,7 +179,6 @@ export default function BlockNoteEditorComponent({
   // 当blocks更新时，更新编辑器内容 - 只在初始化时执行一次
   useEffect(() => {
     if (editor && blocks.length > 0 && isReady && initialContent) {
-      console.log('初始化编辑器内容:', blocks);
       editor.replaceBlocks(editor.document, blocks);
     }
   }, [editor, isReady]); // 移除blocks依赖，避免循环更新
@@ -206,7 +187,6 @@ export default function BlockNoteEditorComponent({
   const handleChange = () => {
     const blocks = editor.document;
     const jsonContent = JSON.stringify(blocks);
-    console.log("内容变化:", jsonContent);
     
     // 使用setTimeout进行防抖，避免频繁触发onChange
     if (timeoutRef.current) {

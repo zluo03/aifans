@@ -53,10 +53,6 @@ export function SearchFilter({
   const searchParams = useSearchParams();
   const { isAuthenticated, user } = useAuthStore();
 
-  console.log('🚀 SearchFilter 组件渲染');
-  console.log('📥 接收到的 platforms 数据:', platforms);
-  console.log('🔐 用户认证状态:', { isAuthenticated, userId: user?.id });
-
   // 状态
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all-types');
@@ -65,16 +61,6 @@ export function SearchFilter({
   const [showMyPosts, setShowMyPosts] = useState(false);
   const [sortOrder, setSortOrder] = useState('newest');
   const [isInitialized, setIsInitialized] = useState(false);
-
-  console.log('📊 当前状态:', {
-    searchText,
-    selectedType,
-    selectedPlatform,
-    showFavorites,
-    showMyPosts,
-    sortOrder,
-    isInitialized
-  });
 
   // 类型选项（固定）
   const typeOptions = [
@@ -104,7 +90,6 @@ export function SearchFilter({
         }
         return p.type === 'IMAGE' || p.type === 'BOTH';
       });
-      console.log('🖼️ 图片平台:', activePlatforms.map(p => ({ id: p.id, name: p.name })));
     } else if (currentType === 'VIDEO') {
       activePlatforms = activePlatforms.filter(p => {
         // 如果是双属性平台，检查是否支持VIDEO
@@ -113,7 +98,6 @@ export function SearchFilter({
         }
         return p.type === 'VIDEO' || p.type === 'BOTH';
       });
-      console.log('🎬 视频平台:', activePlatforms.map(p => ({ id: p.id, name: p.name })));
     }
 
     // 生成选项
@@ -123,7 +107,6 @@ export function SearchFilter({
     }));
 
     const result = [...baseOptions, ...platformOptions];
-    console.log('📝 最终平台选项:', result);
     return result;
   };
 
@@ -139,11 +122,8 @@ export function SearchFilter({
     sortOrder: string;
   }> = {}) => {
     if (!isInitialized) {
-      console.log('⏳ 组件未初始化，跳过搜索');
       return;
     }
-
-    console.log('🔍 执行搜索，参数覆盖:', overrides);
     
     // 使用当前状态值，但允许参数覆盖
     const finalSearchText = overrides.searchText !== undefined ? overrides.searchText : searchText;
@@ -152,15 +132,6 @@ export function SearchFilter({
     const finalShowFavorites = overrides.showFavorites !== undefined ? overrides.showFavorites : showFavorites;
     const finalShowMyPosts = overrides.showMyPosts !== undefined ? overrides.showMyPosts : showMyPosts;
     const finalSortOrder = overrides.sortOrder !== undefined ? overrides.sortOrder : sortOrder;
-
-    console.log('🎯 最终执行参数:', {
-      finalSearchText,
-      finalSelectedType,
-      finalSelectedPlatform,
-      finalShowFavorites,
-      finalShowMyPosts,
-      finalSortOrder
-    });
     
     const searchParams: Record<string, any> = {
       order: finalSortOrder
@@ -172,31 +143,19 @@ export function SearchFilter({
 
     if (finalSelectedType !== 'all-types') {
       searchParams.type = finalSelectedType;
-      console.log('🎯 添加类型参数:', finalSelectedType);
     }
 
     if (finalSelectedPlatform !== 'no-platform-filter') {
       searchParams.aiPlatformId = finalSelectedPlatform;
-      console.log('🏢 添加平台参数:', finalSelectedPlatform);
     }
 
     if (finalShowFavorites) {
       searchParams.onlyFavorites = true;
-      console.log('⭐ 添加收藏参数');
     }
 
     if (finalShowMyPosts) {
       searchParams.onlyMyPosts = true;
-      console.log('📝 添加我的作品参数');
     }
-
-    console.log('📤 最终发送搜索参数:', searchParams);
-    console.log('🔍 参数类型检查:', {
-      type: typeof searchParams.type,
-      aiPlatformId: typeof searchParams.aiPlatformId,
-      onlyFavorites: typeof searchParams.onlyFavorites,
-      onlyMyPosts: typeof searchParams.onlyMyPosts
-    });
     
     // 调用回调
     onSearch(searchParams);
@@ -213,14 +172,12 @@ export function SearchFilter({
       ? `${window.location.pathname}?${urlParams.toString()}` 
       : window.location.pathname;
     
-    console.log('🔗 更新URL:', newUrl);
     router.replace(newUrl);
   }, 300), [isInitialized, searchText, selectedType, selectedPlatform, showFavorites, showMyPosts, sortOrder, onSearch, router]);
 
   // 初始化（从URL读取参数）
   useEffect(() => {
-    console.log('🔄 从URL初始化状态');
-    const params = new URLSearchParams(searchParams);
+    const params = searchParams ? new URLSearchParams(searchParams.toString()) : new URLSearchParams();
     
     const urlSearch = params.get('search') || '';
     const urlType = params.get('type') || 'all-types';
@@ -229,17 +186,7 @@ export function SearchFilter({
     const urlMyPosts = params.get('onlyMyPosts') === 'true';
     const urlSort = params.get('order') || params.get('orderBy') || 'newest';
 
-    console.log('📥 从URL读取的参数:', {
-      urlSearch,
-      urlType,
-      urlPlatform,
-      urlFavorites,
-      urlMyPosts,
-      urlSort
-    });
-
     // 总是使用默认值进行首次初始化，忽略URL参数
-    console.log('🆕 强制使用默认值进行初始化');
     setSearchText('');
     setSelectedType('all-types');
     setSelectedPlatform('no-platform-filter');
@@ -248,13 +195,10 @@ export function SearchFilter({
     setSortOrder('newest');
     
     setIsInitialized(true);
-    console.log('✅ 初始化完成');
   }, []);
 
   // 事件处理
   const handleTypeChange = (value: string) => {
-    console.log('🎯 类型变化开始:', selectedType, '→', value);
-    
     setSelectedType(value);
     
     // 检查当前平台是否支持新类型
@@ -262,12 +206,6 @@ export function SearchFilter({
     if (selectedPlatform !== 'no-platform-filter') {
       const platformId = parseInt(selectedPlatform, 10);
       const currentPlatform = platforms.find(p => p.id === platformId);
-      
-      console.log('🔍 检查平台兼容性:', {
-        platformId,
-        currentPlatform,
-        newType: value
-      });
       
       if (currentPlatform && value !== 'all-types') {
         // 检查平台是否支持新的类型
@@ -287,16 +225,11 @@ export function SearchFilter({
         }
         
         if (!isCompatible) {
-          console.log('❌ 平台不兼容，重置为全部平台');
           newPlatform = 'no-platform-filter';
           setSelectedPlatform('no-platform-filter');
-        } else {
-          console.log('✅ 平台兼容，保持当前选择');
         }
       }
     }
-    
-    console.log('🎯 类型变化完成，立即执行搜索');
     
     // 立即执行搜索，使用新的参数值
     executeSearch({
@@ -306,7 +239,6 @@ export function SearchFilter({
   };
 
   const handlePlatformChange = (value: string) => {
-    console.log('🏢 平台变化:', selectedPlatform, '→', value);
     setSelectedPlatform(value);
     executeSearch({ selectedPlatform: value });
   };
@@ -316,8 +248,6 @@ export function SearchFilter({
       toast.error('请先登录后再使用收藏筛选功能');
       return;
     }
-    console.log('⭐ 收藏变化:', showFavorites, '→', checked);
-    console.log('🔐 当前用户认证状态:', { isAuthenticated, userId: user?.id });
     setShowFavorites(checked);
     executeSearch({ showFavorites: checked });
   };
@@ -327,20 +257,16 @@ export function SearchFilter({
       toast.error('请先登录后再使用我的作品筛选功能');
       return;
     }
-    console.log('📝 我的作品变化:', showMyPosts, '→', checked);
-    console.log('🔐 当前用户认证状态:', { isAuthenticated, userId: user?.id });
     setShowMyPosts(checked);
     executeSearch({ showMyPosts: checked });
   };
 
   const handleSortChange = (value: string) => {
-    console.log('🔄 排序变化:', sortOrder, '→', value);
     setSortOrder(value);
     executeSearch({ sortOrder: value });
   };
 
   const handleReset = () => {
-    console.log('🔄 重置所有筛选');
     setSearchText('');
     setSelectedType('all-types');
     setSelectedPlatform('no-platform-filter');

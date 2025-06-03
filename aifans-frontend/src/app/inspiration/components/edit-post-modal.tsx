@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { postsApi } from "@/lib/api/posts";
 import { Combobox } from "@/components/ui/combobox";
 import { api } from "@/lib/api/api";
+import axios from "axios";
 
 interface Post {
   id: number;
@@ -83,6 +84,8 @@ export default function EditPostModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [platformModels, setPlatformModels] = useState<Array<{ id: number; name: string }>>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [error, setError] = useState('');
 
   // 重置表单数据当post改变时
   useEffect(() => {
@@ -107,13 +110,40 @@ export default function EditPostModal({
     }
   }, [formData.aiPlatformId]);
 
+  // 获取模型列表
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await axios.get('/api/ai-platforms');
+        if (response.data && Array.isArray(response.data)) {
+          const platformList = response.data;
+          const uniqueModels = new Set<string>();
+          
+          platformList.forEach((platform: any) => {
+            if (platform.models && Array.isArray(platform.models)) {
+              platform.models.forEach((model: string) => {
+                if (model) uniqueModels.add(model);
+              });
+            }
+          });
+          
+          setModels(Array.from(uniqueModels).sort());
+        }
+      } catch (error) {
+        // 静默失败，使用默认模型列表
+        setModels(['Midjourney', 'DALL-E 3', 'Stable Diffusion', 'Claude 3', 'GPT-4']);
+      }
+    };
+    
+    fetchModels();
+  }, []);
+
   const fetchPlatformModels = async (platformId: number) => {
     try {
       setLoadingModels(true);
       const response = await api.get(`/ai-platforms/${platformId}/models`);
       setPlatformModels(response.data || []);
     } catch (error) {
-      console.error("获取模型列表失败:", error);
       setPlatformModels([]);
     } finally {
       setLoadingModels(false);
@@ -125,42 +155,37 @@ export default function EditPostModal({
     platform.type === post.type && platform.status === 'ACTIVE'
   );
 
+  // 处理表单提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.prompt.trim()) {
-      toast.error('请输入提示词');
-      return;
-    }
-
-    if (!formData.modelUsed.trim()) {
-      toast.error('请输入使用的模型');
-      return;
-    }
-
-    if (post.type === 'VIDEO' && !formData.videoCategory) {
-      toast.error('请选择视频类型');
-      return;
-    }
-
+    if (isSubmitting) return;
+    
     setIsSubmitting(true);
-
+    setError('');
+    
     try {
-      await postsApi.updatePost(post.id, {
+      // 构建更新数据
+      const updateData = {
         title: formData.title.trim() || undefined,
-        prompt: formData.prompt.trim(),
-        modelUsed: formData.modelUsed.trim(),
+        prompt: formData.prompt.trim() || undefined,
+        modelUsed: formData.modelUsed.trim() || undefined,
         aiPlatformId: formData.aiPlatformId,
         videoCategory: post.type === 'VIDEO' ? formData.videoCategory : undefined,
         allowDownload: formData.allowDownload
-      });
-
-      toast.success('作品信息更新成功');
+      };
+      
+      // 发送更新请求
+      await postsApi.updatePost(post.id, updateData);
+      
+      // 更新成功
+      toast.success('作品信息已更新');
       onSuccess();
       onClose();
-    } catch (error: any) {
-      console.error('更新作品失败:', error);
-      toast.error(error.message || '更新作品失败，请稍后再试');
+    } catch (error) {
+      // 设置错误信息
+      setError('更新作品失败，请稍后再试');
+      toast.error('更新作品失败，请稍后再试');
     } finally {
       setIsSubmitting(false);
     }

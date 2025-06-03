@@ -437,7 +437,7 @@ function NotesContent() {
                       {/* 内容区域 - 为封面图片留出空间 */}
                       <div className={`relative z-20 ${note.coverImageUrl ? 'mt-48' : ''}`}>
                         <CardContent className="p-4">
-                          {/* 第1行：左侧类别，右侧作者昵称和头像 */}
+                          {/* 第1行：左侧类别，右侧作者昵称 */}
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex-shrink-0">
                               {note.category && (
@@ -467,7 +467,10 @@ function NotesContent() {
                             </div>
                           </div>
                           
-                          {/* 第2行：左侧统计数据，右侧创建日期 */}
+                          {/* 笔记标题 - 加粗显示，单行截断 */}
+                          <h3 className="font-bold text-base mb-3 truncate">{note.title}</h3>
+                          
+                          {/* 统计数据和创建日期 */}
                           <div className="flex items-center justify-between text-sm text-muted-foreground">
                             <div className="flex items-center gap-3">
                               <span className="flex items-center gap-1">

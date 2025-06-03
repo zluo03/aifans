@@ -92,6 +92,16 @@ const nextConfig: NextConfig = {
     console.log(`配置API代理: ${apiBaseUrl}`);
     
     return [
+      // 添加公共API代理 - 直接路径
+      {
+        source: '/public/:path*',
+        destination: `${apiBaseUrl}/public/:path*`,
+      },
+      // 添加公共API代理
+      {
+        source: '/api/public/:path*',
+        destination: `${apiBaseUrl}/public/:path*`,
+      },
       // 之前已有的规则
       {
         source: '/api/creators/:path*',

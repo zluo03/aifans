@@ -10,15 +10,24 @@ export function processImageUrl(url: string | null | undefined): string {
     if (/^https?:\/\//.test(url)) {
       return url;
     }
-    // 如果是正确的avatar路径，直接返回
-    if (url.startsWith('/uploads/avatar/')) {
+    
+    // 如果是以/uploads/开头的完整路径，直接返回
+    if (url.startsWith('/uploads/')) {
       return url;
     }
-    // 只提取文件名和已有扩展名，不做任何扩展名补全
-    const match = url.match(/([^\/]+\.[a-zA-Z0-9]+)$/);
+    
+    // 如果是相对路径，尝试保留原始目录结构
+    const match = url.match(/^(?:\/uploads\/)?([^\/]+\/[^\/]+\.[a-zA-Z0-9]+)$/);
     if (match && match[1]) {
-      return `/uploads/avatar/${match[1]}`;
+      return `/uploads/${match[1]}`;
     }
+    
+    // 如果只有文件名，默认放在avatar目录（向后兼容）
+    const fileNameMatch = url.match(/([^\/]+\.[a-zA-Z0-9]+)$/);
+    if (fileNameMatch && fileNameMatch[1]) {
+      return `/uploads/avatar/${fileNameMatch[1]}`;
+    }
+    
     // 如果是完整URL，尝试提取文件名和扩展名
     try {
       const urlObj = new URL(url, 'http://dummy.com');
@@ -28,6 +37,7 @@ export function processImageUrl(url: string | null | undefined): string {
         return `/uploads/avatar/${fileMatch[1]}`;
       }
     } catch {}
+    
     // 其他情况返回默认头像
     return '/images/default-avatar.png';
   } catch (error) {
@@ -46,18 +56,28 @@ export function processPostImageUrl(url: string | undefined): string {
   try {
     // 如果是http/https开头，直接返回原始URL
     if (/^https?:\/\//.test(url)) {
+      // 对于阿里云OSS链接，添加时间戳防止缓存问题
+      if (url.includes('aliyuncs.com') || url.includes('oss-cn-')) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}_t=${Date.now()}`;
+      }
       return url;
     }
     
     // 如果是相对路径，加上后端基础URL
     if (url.startsWith('/')) {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      return `${baseUrl}${url}`;
+      // 添加时间戳防止缓存问题
+      const fullUrl = `${baseUrl}${url}`;
+      const separator = fullUrl.includes('?') ? '&' : '?';
+      return `${fullUrl}${separator}_t=${Date.now()}`;
     }
     
     // 其他情况，假设是相对于/uploads/的路径
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    return `${baseUrl}/uploads/${url}`;
+    const fullUrl = `${baseUrl}/uploads/${url}`;
+    const separator = fullUrl.includes('?') ? '&' : '?';
+    return `${fullUrl}${separator}_t=${Date.now()}`;
   } catch (error) {
     console.error('处理帖子图片URL出错:', error);
     return url; // 出错时返回原始URL
@@ -100,18 +120,29 @@ export function addTimestampToUrl(url: string): string {
 }
 
 /**
- * 更新URL中的时间戳
- * @param url 带有时间戳的URL
- * @returns 更新时间戳后的URL
+ * 处理上传作品的图片URL，添加时间戳防止缓存问题
+ * @param url 原始URL
+ * @returns 处理后的URL，带有时间戳
  */
-export function updateUrlTimestamp(url: string): string {
+export function processUploadImageUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  
   try {
-    // 替换已有的时间戳
-    return url.replace(/(_t=)\d+/, `$1${Date.now()}`);
+    // 处理URL，确保格式正确
+    let processedUrl = url;
+    
+    // 如果是相对路径，加上后端基础URL
+    if (url.startsWith('/')) {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      processedUrl = `${baseUrl}${url}`;
+    }
+    
+    // 添加时间戳防止缓存
+    const separator = processedUrl.includes('?') ? '&' : '?';
+    return `${processedUrl}${separator}_t=${Date.now()}`;
   } catch (error) {
-    // 出错时添加新的时间戳
-    console.log('更新时间戳失败，添加新时间戳');
-    return addTimestampToUrl(url);
+    console.error('处理上传图片URL出错:', error);
+    return url; // 出错时返回原始URL
   }
 }
 

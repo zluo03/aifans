@@ -125,6 +125,11 @@ export class UsersService {
       
       this.logger.debug('用户信息更新成功:', { userId: id, updatedFields: Object.keys(updateData) });
       
+      // 如果更新了昵称或头像，同步更新创作者信息
+      if (updateUserDto.nickname || updateUserDto.avatarUrl) {
+        await this.syncCreatorProfile(id, updateUserDto.nickname, updateUserDto.avatarUrl);
+      }
+      
       // 使用类型转换函数
       const userWithHash = mapUserPasswordField(user);
       const { passwordHash, ...result } = userWithHash;
@@ -139,6 +144,113 @@ export class UsersService {
         throw error;
       }
       throw new BadRequestException('更新用户信息失败');
+    }
+  }
+
+  // 同步更新创作者信息
+  private async syncCreatorProfile(userId: number, nickname?: string, avatarUrl?: string) {
+    try {
+      // 检查用户是否有创作者信息
+      const creator = await this.prisma.creator.findUnique({
+        where: { userId }
+      });
+      
+      if (creator) {
+        this.logger.debug('同步更新创作者信息:', { userId, nickname, avatarUrl });
+        
+        // 准备更新数据
+        const updateData: any = {};
+        
+        // 只更新提供的字段
+        if (nickname) {
+          updateData.nickname = nickname;
+        }
+        
+        if (avatarUrl) {
+          updateData.avatarUrl = avatarUrl;
+        }
+        
+        // 只有当有数据需要更新时才执行更新
+        if (Object.keys(updateData).length > 0) {
+          await this.prisma.creator.update({
+            where: { userId },
+            data: updateData
+          });
+          
+          this.logger.debug('创作者信息同步更新成功:', { userId, updatedFields: Object.keys(updateData) });
+        }
+      } else {
+        this.logger.debug('用户没有创作者信息，无需同步:', { userId });
+      }
+    } catch (error) {
+      this.logger.error('同步更新创作者信息失败:', { userId, error });
+      // 不抛出异常，避免影响主流程
+    }
+  }
+
+  // 同步所有用户信息到创作者信息
+  async syncAllCreatorsWithUsers(): Promise<{ updated: number, total: number }> {
+    this.logger.log('开始同步所有用户信息到创作者信息');
+    
+    try {
+      // 获取所有创作者记录
+      const creators = await this.prisma.creator.findMany();
+      this.logger.log(`找到 ${creators.length} 个创作者记录`);
+      
+      let updatedCount = 0;
+      
+      // 遍历所有创作者，同步信息
+      for (const creator of creators) {
+        try {
+          // 获取对应的用户信息
+          const user = await this.prisma.user.findUnique({
+            where: { id: creator.userId }
+          });
+          
+          if (!user) {
+            this.logger.warn(`创作者(${creator.id})对应的用户(${creator.userId})不存在，跳过同步`);
+            continue;
+          }
+          
+          // 检查是否需要更新
+          const needUpdate = creator.nickname !== user.nickname || creator.avatarUrl !== user.avatarUrl;
+          
+          if (needUpdate) {
+            // 准备更新数据，处理可能的null值
+            const updateData: any = {
+              updatedAt: new Date()
+            };
+            
+            // 只有当用户昵称不为null时才更新
+            if (user.nickname) {
+              updateData.nickname = user.nickname;
+            }
+            
+            // 只有当用户头像不为null时才更新
+            if (user.avatarUrl) {
+              updateData.avatarUrl = user.avatarUrl;
+            }
+            
+            // 更新创作者信息
+            await this.prisma.creator.update({
+              where: { id: creator.id },
+              data: updateData
+            });
+            
+            this.logger.log(`已同步创作者(${creator.id})的信息与用户(${user.id})信息`);
+            updatedCount++;
+          }
+        } catch (error) {
+          this.logger.error(`同步创作者(${creator.id})信息失败:`, error);
+          // 继续处理下一个，不中断整个流程
+        }
+      }
+      
+      this.logger.log(`同步完成，共更新了 ${updatedCount}/${creators.length} 个创作者信息`);
+      return { updated: updatedCount, total: creators.length };
+    } catch (error) {
+      this.logger.error('批量同步创作者信息失败:', error);
+      throw error;
     }
   }
 

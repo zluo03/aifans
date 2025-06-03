@@ -27,13 +27,10 @@ export function SocialMediaFooter({ className = '' }: SocialMediaFooterProps) {
 
   const fetchSocialMedia = async () => {
     try {
-      console.log('开始获取社交媒体列表');
       setLoading(true);
       const data = await socialMediaApi.getAll();
-      console.log('获取到社交媒体数据:', data);
       setSocialMediaList(data);
     } catch (error) {
-      console.error('获取社交媒体失败:', error);
       toast.error('获取社交媒体失败');
     } finally {
       setLoading(false);
@@ -75,7 +72,6 @@ export function SocialMediaFooter({ className = '' }: SocialMediaFooterProps) {
               alt={item.name}
               className="w-full h-full object-contain"
               onError={(e) => {
-                console.error(`加载Logo失败: ${item.logoUrl}`);
                 e.currentTarget.style.display = 'none';
               }}
             />
@@ -90,7 +86,6 @@ export function SocialMediaFooter({ className = '' }: SocialMediaFooterProps) {
                   alt={`${item.name} 二维码`}
                   className="w-full h-full object-contain"
                   onError={(e) => {
-                    console.error(`加载二维码失败: ${item.qrCodeUrl}`);
                     e.currentTarget.style.display = 'none';
                   }}
                 />

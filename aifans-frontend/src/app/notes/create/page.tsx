@@ -49,7 +49,6 @@ export default function CreateNotePage() {
 
   const handleAutoSave = useCallback((content: string) => {
     // 可选：自动保存功能
-    console.log('自动保存内容:', content);
   }, []);
 
   useEffect(() => {
@@ -59,7 +58,6 @@ export default function CreateNotePage() {
         setCategories(categoriesData);
         setLoading(false);
       } catch (error) {
-        console.error('Error fetching categories:', error);
         toast.error('获取分类失败');
         setLoading(false);
       }
@@ -77,7 +75,7 @@ export default function CreateNotePage() {
     }
 
     fetchCategories();
-  }, [user, router]);
+  }, [user, router, permissions]);
 
   // 封面图片上传处理
   const handleCoverUpload = useCallback(async (files: File[]): Promise<Array<{ url: string; key: string }>> => {
@@ -103,7 +101,7 @@ export default function CreateNotePage() {
           maxSizeMB = limit.imageMaxSizeMB;
         }
       } catch (limitError) {
-        console.warn('获取上传限制失败，使用默认值', limitError);
+        // 使用默认值
       }
 
       // 验证文件大小
@@ -111,16 +109,9 @@ export default function CreateNotePage() {
         toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
-
-      console.log('准备上传文件:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
       
       // 从认证store获取token
       const { token } = useAuthStore.getState();
-      console.log('Token存在:', !!token);
 
       if (!token) {
         toast.error('请先登录');
@@ -132,89 +123,42 @@ export default function CreateNotePage() {
       formData.append('file', file);
       formData.append('folder', 'notes/covers');
 
-      let response;
-      let successfulUpload = false;
-      
-      // 尝试方法1：使用api实例上传
+      // 上传文件
       try {
-        console.log('尝试方法1：使用api实例上传');
-        response = await api.post('/storage/upload', formData, {
+        const response = await api.post('/storage/upload', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             'Authorization': `Bearer ${token}`
           }
         });
-        console.log('方法1上传成功:', response.data);
-        successfulUpload = true;
-      } catch (uploadErr) {
-        console.error('方法1上传失败:', uploadErr);
         
-        // 尝试方法2：使用fetch直接上传
-        try {
-          console.log('尝试方法2：使用fetch直接上传');
-          const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
-          const fetchResponse = await fetch(`${baseUrl}/api/storage/upload`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            body: formData,
-            credentials: 'include'
-          });
-          
-          console.log('fetch响应状态:', fetchResponse.status);
-          const responseText = await fetchResponse.text();
-          console.log('fetch响应内容:', responseText);
-          
-          if (fetchResponse.ok) {
-            response = { data: JSON.parse(responseText) };
-            console.log('方法2上传成功:', response.data);
-            successfulUpload = true;
-          } else {
-            throw new Error(`Fetch上传失败: ${fetchResponse.status}, ${responseText}`);
-          }
-        } catch (fetchErr) {
-          console.error('方法2上传失败:', fetchErr);
-          
-          // 尝试方法3：使用相对路径
-          try {
-            console.log('尝试方法3：使用相对路径');
-            const fetchResponse = await fetch('/api/storage/upload', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`
-              },
-              body: formData
-            });
-            
-            console.log('方法3响应状态:', fetchResponse.status);
-            const responseText = await fetchResponse.text();
-            console.log('方法3响应内容:', responseText);
-            
-            if (fetchResponse.ok) {
-              response = { data: JSON.parse(responseText) };
-              console.log('方法3上传成功:', response.data);
-              successfulUpload = true;
-            } else {
-              throw new Error(`相对路径上传失败: ${fetchResponse.status}, ${responseText}`);
-            }
-          } catch (relativeErr) {
-            console.error('方法3上传失败:', relativeErr);
-            throw relativeErr; // 所有方法都失败，抛出最后一个错误
-          }
+        if (response && response.data && response.data.url) {
+          setCoverImageUrl(response.data.url);
+          toast.success(`封面图片上传成功`);
+          return [response.data];
+        } else {
+          throw new Error('上传失败：未返回文件URL');
         }
+      } catch (uploadErr) {
+        // 尝试备用方法
+        const fetchResponse = await fetch('/api/storage/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+        
+        if (fetchResponse.ok) {
+          const result = await fetchResponse.json();
+          setCoverImageUrl(result.url);
+          toast.success(`封面图片上传成功`);
+          return [result];
+        }
+        
+        throw uploadErr;
       }
-      
-      if (!successfulUpload || !response || !response.data) {
-        throw new Error('所有上传尝试均失败');
-      }
-      
-      // 设置封面URL
-      setCoverImageUrl(response.data.url);
-      toast.success(`封面图片上传成功`);
-      return [response.data];
     } catch (error) {
-      console.error('上传错误:', error);
       const errorMessage = error instanceof Error ? error.message : 
                           (typeof error === 'object' ? JSON.stringify(error) : String(error));
       toast.error(`封面图片上传失败: ${errorMessage}`);
@@ -241,15 +185,6 @@ export default function CreateNotePage() {
       return;
     }
     
-    // 添加调试日志
-    console.log('提交时的内容:', {
-      title,
-      content,
-      contentLength: content.length,
-      categoryId: parseInt(categoryId),
-      coverImageUrl
-    });
-    
     setLoadingAction(true);
     
     try {
@@ -260,13 +195,10 @@ export default function CreateNotePage() {
         coverImageUrl: coverImageUrl || undefined
       };
       
-      console.log('发送的payload:', payload);
-      
       const newNote = await notesApi.createNote(payload);
       toast.success('笔记已创建');
       router.push(`/notes/${newNote.id}`);
     } catch (error) {
-      console.error('Error creating note:', error);
       toast.error('创建笔记失败');
     } finally {
       setLoadingAction(false);

@@ -41,10 +41,8 @@ export async function getUploadLimits(): Promise<UploadLimits> {
         return data.limits;
       }
     }
-    console.warn('获取上传限制失败，使用默认配置');
     return defaultLimits;
   } catch (error) {
-    console.error('获取上传限制失败:', error);
     return defaultLimits;
   }
 }
@@ -116,26 +114,21 @@ export async function getUploadLimit(module: string): Promise<UploadLimit> {
     
     // 如果直接路径失败，尝试API路径
     if (!response.ok) {
-      console.log(`直接路径获取${module}模块上传限制失败，尝试API路径`);
       response = await fetch(`/api/public/settings/upload-limits/${module}`);
     }
     
     // 如果公共API失败，尝试管理员API
     if (!response.ok) {
-      console.log(`公共API获取${module}模块上传限制失败，尝试管理员API`);
       response = await fetch(`/api/admin/settings/upload-limits/${module}`);
     }
     
     if (response.ok) {
       const limit = await response.json();
-      console.log(`获取到${module}模块上传限制:`, limit);
       return limit;
     } else {
       throw new Error(`获取${module}模块上传限制失败`);
     }
   } catch (error) {
-    console.warn(`获取${module}模块上传限制失败，使用默认值`, error);
-    
     // 根据模块返回默认值
     if (module === 'notes') {
       return { imageMaxSizeMB: 5, videoMaxSizeMB: 50 };

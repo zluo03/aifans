@@ -51,14 +51,51 @@ export class StorageService {
     file: Express.Multer.File,
     folder: string = 'general',
   ): Promise<{ url: string; key: string }> {
+    if (!file) {
+      this.logger.error('上传文件失败: 文件对象为空');
+      throw new Error('上传文件失败: 文件对象为空');
+    }
+
+    this.logger.log(`开始上传文件: ${file.originalname}, 大小: ${file.size}, 类型: ${file.mimetype}, 目标文件夹: ${folder}`);
+    
+    // 检查是否是灵感页面上传的文件，如果是则使用posts目录
+    if (folder === 'general' && file.originalname && file.mimetype) {
+      // 检查文件类型是否为图片或视频（灵感页面上传的类型）
+      const isImage = file.mimetype.startsWith('image/');
+      const isVideo = file.mimetype.startsWith('video/');
+      
+      if (isImage || isVideo) {
+        // 这很可能是灵感页面上传的文件，改用posts目录
+        folder = 'posts';
+        this.logger.log(`检测到灵感页面上传，使用posts目录而不是general目录`);
+      }
+    }
+    
     const uniqueFileName = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
     const key = `${folder}/${uniqueFileName}`;
+    this.logger.log(`生成的文件路径: ${key}`);
 
-    // 判断是否使用OSS
-    if (this.storageConfig.isOssEnabled && this.ossClient) {
-      return this.uploadToOSS(file.buffer, key);
-    } else {
-      return this.uploadToLocal(file.buffer, key);
+    try {
+      // 从数据库获取当前存储配置
+      const storageConfig = await this.prisma.storageConfig.findFirst();
+      this.logger.log(`当前存储配置: ${storageConfig?.defaultStorage || '未配置，使用本地存储'}`);
+      
+      // 无论当前存储配置如何，始终先保存到本地
+      const localResult = await this.uploadToLocal(file.buffer, key);
+      this.logger.log(`文件已保存到本地: ${localResult.url}`);
+      
+      // 返回本地URL，即使选择了OSS存储
+      // 文件将通过手动迁移功能迁移到OSS
+      return localResult;
+    } catch (error) {
+      this.logger.error(`上传文件失败: ${error.message}`, error.stack);
+      // 出错时默认使用本地存储
+      try {
+        return this.uploadToLocal(file.buffer, key);
+      } catch (localError) {
+        this.logger.error(`本地存储也失败: ${localError.message}`, localError.stack);
+        throw new Error(`文件上传失败: ${error.message}, 本地存储也失败: ${localError.message}`);
+      }
     }
   }
 
@@ -67,6 +104,11 @@ export class StorageService {
     buffer: Buffer,
     key: string,
   ): Promise<{ url: string; key: string }> {
+    if (!buffer) {
+      this.logger.error('上传到本地失败: 文件内容为空');
+      throw new Error('上传到本地失败: 文件内容为空');
+    }
+    
     // 获取上传目录路径
     const uploadDir = path.join(process.cwd(), 'uploads');
     this.logger.log(`上传目录: ${uploadDir}`);
@@ -84,6 +126,7 @@ export class StorageService {
       this.logger.log(`目录不存在，创建目录: ${dirPath}`);
       try {
         fs.mkdirSync(dirPath, { recursive: true });
+        this.logger.log(`目录创建成功: ${dirPath}`);
       } catch (error) {
         this.logger.error(`创建目录失败: ${error.message}`);
         throw new Error(`创建目录失败: ${error.message}`);
@@ -125,8 +168,18 @@ export class StorageService {
   ): Promise<{ url: string; key: string }> {
     try {
       const result = await this.ossClient.put(key, buffer);
+      
+      // 获取OSS配置以构建正确的URL
+      const ossConfig = await this.prisma.ossConfig.findFirst();
+      const domain = ossConfig?.domain || result.url;
+      
+      // 构建OSS URL
+      const url = domain ? (domain.endsWith('/') ? `${domain}${key}` : `${domain}/${key}`) : result.url;
+      
+      this.logger.log(`文件已上传到OSS: ${url}`);
+      
       return {
-        url: result.url || `${this.storageConfig.ossCdnDomain}/${key}`,
+        url,
         key,
       };
     } catch (error) {
@@ -154,10 +207,25 @@ export class StorageService {
   }
 
   // 获取文件URL
-  getFileUrl(key: string): string {
-    if (this.storageConfig.isOssEnabled) {
-      return `${this.storageConfig.ossCdnDomain}/${key}`;
-    } else {
+  async getFileUrl(key: string): Promise<string> {
+    try {
+      // 从数据库获取当前存储配置
+      const storageConfig = await this.prisma.storageConfig.findFirst();
+      const ossConfig = await this.prisma.ossConfig.findFirst();
+      
+      // 如果数据库配置为使用OSS且OSS配置存在
+      if (storageConfig?.defaultStorage === 'oss' && ossConfig) {
+        // 使用OSS域名或自定义域名
+        const domain = ossConfig.domain || `https://${ossConfig.bucket}.${ossConfig.endpoint}`;
+        return `${domain}/${key}`;
+      } else {
+        // 使用本地存储路径
+        const baseUrl = this.configService.get<string>('SERVER_DOMAIN') || this.configService.get<string>('BASE_URL') || 'http://localhost:3001';
+        return `${baseUrl}/uploads/${key}`;
+      }
+    } catch (error) {
+      this.logger.error(`获取文件URL失败: ${error.message}`, error.stack);
+      // 出错时返回本地路径作为后备
       return `/uploads/${key}`;
     }
   }

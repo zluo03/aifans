@@ -109,23 +109,16 @@ export default function InspirationPage() {
         const newPosts = postsArray.filter(post => {
           // 基本数据验证
           if (!post || typeof post !== 'object' || !post.id) {
-            console.warn('发现无效帖子数据:', post);
             return false;
           }
           
           // 状态检查
           if (post.status !== 'VISIBLE') {
-            console.info(`帖子(ID:${post.id})状态不可见:`, post.status);
             return false;
           }
           
           // 必需字段检查
           if (!post.fileUrl || !post.user || !post.aiPlatform) {
-            console.warn(`帖子(ID:${post.id})缺少必要字段:`, {
-              hasFileUrl: !!post.fileUrl,
-              hasUser: !!post.user,
-              hasAiPlatform: !!post.aiPlatform
-            });
             return false;
           }
           
@@ -146,16 +139,12 @@ export default function InspirationPage() {
           return true;
         });
         
-        console.log(`获取到${postsArray.length}个帖子，过滤后剩余${newPosts.length}个有效帖子`);
-        
         // 移除前端排序，因为后端已经处理了排序，直接使用后端返回的顺序
         setPosts(newPosts);
       } else {
-        console.warn('API返回格式不符合预期:', response);
         setPosts([]);
       }
     } catch (err) {
-      console.error("获取作品列表失败:", err);
       setPosts([]);
       setError("获取作品列表失败，请刷新页面重试");
     } finally {
@@ -177,14 +166,12 @@ export default function InspirationPage() {
         
         if (isMounted && data) {
           if (data.length === 0) {
-            console.warn('后端返回了空的平台列表');
             // 不设置错误，允许页面继续显示
           }
           
           // 添加status字段缺失处理
           const dataWithStatus = data.map((platform: any) => {
             if (!platform || typeof platform !== 'object') {
-              console.warn('平台数据无效:', platform);
               return platform;
             }
             
@@ -197,7 +184,6 @@ export default function InspirationPage() {
           const activePlatforms = dataWithStatus.filter(platform => platform.status === 'ACTIVE');
           
           if (activePlatforms.length === 0) {
-            console.warn('没有状态为ACTIVE的平台，尝试使用所有平台');
             // 如果没有ACTIVE平台，使用所有平台，而不是设置错误
             setPlatforms(dataWithStatus);
           } else {
@@ -243,15 +229,8 @@ export default function InspirationPage() {
             supportedTypes: Array.from(p.types)
           })) as any[];
 
-          console.log('处理后的平台数据:', processed.map(p => ({
-            name: p.name,
-            type: p.type,
-            supportedTypes: p.supportedTypes
-          })));
-
           setProcessedPlatforms(processed);
         } else {
-          console.warn('InspirationPage - 没有获取到平台数据或平台列表为空');
           if (isMounted) {
             setPlatforms([]);
             setProcessedPlatforms([]);
@@ -259,16 +238,10 @@ export default function InspirationPage() {
           }
         }
       } catch (err: any) {
-        console.error('获取AI平台列表失败:', {
-          message: err.message,
-          response: err.response?.data,
-          status: err.response?.status
-        });
         if (isMounted) {
           setPlatforms([]);
           setProcessedPlatforms([]);
           // 只记录错误，不阻止页面显示
-          console.error('平台列表获取失败，但页面将继续加载');
         }
       }
     };
@@ -281,14 +254,12 @@ export default function InspirationPage() {
 
   const handlePostClick = useCallback((post: Post) => {
     if (!post || !post.id) {
-      console.error('尝试查看无效帖子详情:', post);
       toast.error('无法查看作品详情，作品数据无效');
       return;
     }
     
     // 检查帖子状态是否可见
     if (post.status !== 'VISIBLE') {
-      console.error(`尝试查看不可见的帖子详情: ID=${post.id}, 状态=${post.status}`);
       toast.error('该作品当前不可见，无法查看详情');
       return;
     }
@@ -299,47 +270,36 @@ export default function InspirationPage() {
       duration: 2000 // 最多显示2秒
     });
     
-    try {
-      // 重新获取最新的帖子数据，确保数据是最新的
-      postsApi.getPost(post.id)
-        .then(updatedPost => {
-          // 关闭加载提示
-          toast.dismiss(`loading-post-${post.id}`);
+    // 获取最新的帖子数据
+    postsApi.getPost(post.id)
+      .then(response => {
+        // 关闭加载提示
+        toast.dismiss(`loading-post-${post.id}`);
+        
+        if (response && response.id) {
+          // 处理图片URL
+          const processedPost = {
+            ...response,
+            fileUrl: processPostImageUrl(response.fileUrl),
+            thumbnailUrl: response.thumbnailUrl ? processPostImageUrl(response.thumbnailUrl) : response.thumbnailUrl,
+            aiPlatform: {
+              ...response.aiPlatform,
+              logoUrl: response.aiPlatform.logoUrl ? processPostImageUrl(response.aiPlatform.logoUrl) : response.aiPlatform.logoUrl
+            }
+          };
           
-          // 更新选中的帖子并打开详情模态框
-          setSelectedPost(updatedPost);
+          // 设置当前帖子并显示详情模态框
+          setSelectedPost(processedPost);
           setIsDetailModalOpen(true);
-        })
-        .catch(err => {
-          // 关闭加载提示并显示错误
-          toast.dismiss(`loading-post-${post.id}`);
-          
-          console.error(`获取帖子详情失败, ID: ${post.id}`, err);
-          
-          // 处理404错误 - 帖子可能已被删除
-          if (err.message?.includes('不存在') || err.message?.includes('已被删除')) {
-            toast.error('该作品不存在或已被删除');
-            
-            // 从列表中移除该帖子
-            setPosts(currentPosts => currentPosts.filter(p => p.id !== post.id));
-            return;
-          }
-          
-          // 对于其他错误，仍然使用列表中的数据显示
-          setSelectedPost(post);
-          setIsDetailModalOpen(true);
-          toast.error('获取最新作品数据失败，显示可能不是最新信息');
-        });
-    } catch (err) {
-      // 关闭加载提示
-      toast.dismiss(`loading-post-${post.id}`);
-      
-      console.error(`处理帖子点击事件出错, ID: ${post.id}`, err);
-      // 即使出错，也尝试显示
-      setSelectedPost(post);
-      setIsDetailModalOpen(true);
-      toast.error('加载作品详情时发生错误');
-    }
+        } else {
+          toast.error('无法加载作品详情，请稍后再试');
+        }
+      })
+      .catch(err => {
+        // 关闭加载提示
+        toast.dismiss(`loading-post-${post.id}`);
+        toast.error('加载作品详情失败，请稍后再试');
+      });
   }, []);
 
   const handleLikeToggle = useCallback(async (postId: number) => {
@@ -366,14 +326,12 @@ export default function InspirationPage() {
     
     // 如果在当前列表中找不到目标帖子，可能已被移除或过滤
     if (!targetPost) {
-      console.error(`尝试点赞不存在的帖子: ID=${postId}`);
       toast.error('找不到要点赞的作品，请刷新页面');
       return;
     }
     
     // 如果帖子状态不可见，不允许点赞
     if (targetPost.status === 'HIDDEN' || targetPost.status === 'ADMIN_DELETED') {
-      console.error(`尝试点赞不可见的帖子: ID=${postId}, 状态=${targetPost.status}`);
       toast.error('该作品当前不可见，无法进行点赞操作');
       return;
     }
@@ -407,38 +365,11 @@ export default function InspirationPage() {
     }
     
     try {
-      // 直接获取认证状态信息，用于调试
-      let authHeader = null;
-      let tokenInfo = "未知";
-      if (typeof window !== 'undefined') {
-        const authStorage = localStorage.getItem('auth-storage');
-        if (authStorage) {
-          try {
-            const { state } = JSON.parse(decodeURIComponent(authStorage));
-            authHeader = state?.token ? `存在 (${state.token.substring(0, 10)}...)` : '不存在';
-            if (state?.user) {
-              tokenInfo = `用户ID: ${state.user.id}, 用户名: ${state.user.username}`;
-            }
-          } catch (e) {
-            authHeader = '解析失败';
-          }
-        }
-      }
-      
       // 与服务器进行同步
-      console.log(`发送点赞请求: 帖子ID=${postId}, 预期状态=${newHasLiked ? '点赞' : '取消点赞'}, 认证状态=${authHeader}, ${tokenInfo}`);
       const response = await postsApi.toggleLike(postId);
-      
-      // 记录响应成功信息
-      console.log(`点赞请求成功响应: `, response);
       
       // 如果服务器返回的状态与我们预期的不一致，调整UI状态
       if (response && response.liked !== undefined && response.liked !== newHasLiked) {
-        console.log('服务器状态与本地预期不一致，正在更新UI...', {
-          预期状态: newHasLiked,
-          服务器返回状态: response.liked
-        });
-        
         // 以服务器返回的状态为准，更新UI
         const correctedPosts = currentPosts.map(post => {
           if (post.id === postId) {
@@ -473,8 +404,6 @@ export default function InspirationPage() {
       // toast.success(newHasLiked ? '点赞成功' : '取消点赞成功', { duration: 1500 });
       
     } catch (err: any) {
-      console.error("点赞操作失败:", err);
-      
       // 回滚UI状态
       setPosts(previousPosts);
       
@@ -509,7 +438,6 @@ export default function InspirationPage() {
       
       // 如果是作品不存在错误，从列表中移除该帖子
       if (shouldRemovePost) {
-        console.log(`从列表中移除不存在的帖子，ID: ${postId}`);
         const filteredPosts = currentPosts.filter(post => post.id !== postId);
         setPosts(filteredPosts);
         
@@ -553,14 +481,12 @@ export default function InspirationPage() {
     
     // 如果在当前列表中找不到目标帖子，可能已被移除或过滤
     if (!targetPost) {
-      console.error(`尝试收藏不存在的帖子: ID=${postId}`);
       toast.error('找不到要收藏的作品，请刷新页面');
       return;
     }
     
     // 如果帖子状态不可见，不允许收藏
     if (targetPost.status === 'HIDDEN' || targetPost.status === 'ADMIN_DELETED') {
-      console.error(`尝试收藏不可见的帖子: ID=${postId}, 状态=${targetPost.status}`);
       toast.error('该作品当前不可见，无法进行收藏操作');
       return;
     }
@@ -595,16 +521,10 @@ export default function InspirationPage() {
     
     try {
       // 与服务器进行同步
-      console.log(`发送收藏请求: 帖子ID=${postId}, 预期状态=${newHasFavorited ? '收藏' : '取消收藏'}`);
       const response = await postsApi.toggleFavorite(postId);
       
       // 如果服务器返回的状态与我们预期的不一致，调整UI状态
       if (response && response.favorited !== undefined && response.favorited !== newHasFavorited) {
-        console.log('服务器状态与本地预期不一致，正在更新UI...', {
-          预期状态: newHasFavorited,
-          服务器返回状态: response.favorited
-        });
-        
         // 以服务器返回的状态为准，更新UI
         const correctedPosts = currentPosts.map(post => {
           if (post.id === postId) {
@@ -639,8 +559,6 @@ export default function InspirationPage() {
       // toast.success(newHasFavorited ? '收藏成功' : '取消收藏成功', { duration: 1500 });
       
     } catch (err: any) {
-      console.error("收藏操作失败:", err);
-      
       // 回滚UI状态
       setPosts(previousPosts);
       
@@ -675,7 +593,6 @@ export default function InspirationPage() {
       
       // 如果是作品不存在错误，从列表中移除该帖子
       if (shouldRemovePost) {
-        console.log(`从列表中移除不存在的帖子，ID: ${postId}`);
         const filteredPosts = currentPosts.filter(post => post.id !== postId);
         setPosts(filteredPosts);
         
@@ -695,10 +612,11 @@ export default function InspirationPage() {
     }
   }, [isAuthenticated, selectedPost, setIsDetailModalOpen]);
 
-  const handleUploadSuccess = useCallback(async () => {
-    await fetchPosts({});
-    // Layout will be updated by the useEffect watching 'posts'
-  }, [fetchPosts]); // fetchPosts is stable
+  const handleUploadSuccess = useCallback((newPost?: unknown) => {
+    // 重新获取帖子列表，确保显示最新数据
+    fetchPosts({});
+    setIsUploadModalOpen(false);
+  }, [fetchPosts]);
 
   // 编辑作品回调
   const handleEditPost = useCallback(() => {
@@ -726,121 +644,21 @@ export default function InspirationPage() {
       setIsDetailModalOpen(false);
       setSelectedPost(null);
     } catch (error: any) {
-      console.error('删除作品失败:', error);
       toast.error(error.message || '删除作品失败，请稍后再试');
     }
   }, [selectedPost]);
 
   // 编辑成功回调
-  const handleEditSuccess = useCallback(async () => {
-    // 重新获取作品列表以更新数据
-    await fetchPosts({});
-    
-    // 如果当前有选中的作品，重新获取其详情
-    if (selectedPost) {
-      try {
-        const updatedPost = await postsApi.getPost(selectedPost.id);
-        setSelectedPost(updatedPost);
-      } catch (error) {
-        console.error('获取更新后的作品详情失败:', error);
-      }
-    }
-    
+  const handleEditSuccess = useCallback(() => {
+    // 重新获取帖子列表，确保显示最新数据
+    fetchPosts({});
     setIsEditModalOpen(false);
-    setIsDetailModalOpen(true);
-    toast.success('作品信息更新成功');
-  }, [fetchPosts, selectedPost]);
+    setSelectedPost(null);
+  }, [fetchPosts]);
 
   const handleSearch = useCallback((filters: Record<string, any>) => {
-    console.log('灵感页面接收到过滤参数:', filters);
-    
-    // 更新选中的类型，但不自动重置平台选择
-    if (filters.type !== selectedType) {
-      setSelectedType(filters.type);
-    }
-    
-    // 处理作品类型过滤
-    if (filters.type === 'all-types' || !filters.type || filters.type === '') {
-      delete filters.type; // 删除该字段，相当于不过滤类型
-      console.log('设置为显示所有类型');
-    } else {
-      console.log('设置类型过滤为:', filters.type);
-    }
-    
-    // 处理AI平台过滤
-    if (filters.aiPlatformId === 'no-platform-filter' || !filters.aiPlatformId || filters.aiPlatformId === '') {
-      delete filters.aiPlatformId; 
-      delete filters.aiPlatformIds; 
-      console.log('设置为显示所有平台');
-    } else if (filters.aiPlatformId) {
-      // 检查是否是双属性平台
-      const selectedPlatformId = parseInt(filters.aiPlatformId, 10);
-      const selectedProcessedPlatform = processedPlatforms.find(p => p.id === selectedPlatformId);
-      
-      if (selectedProcessedPlatform && selectedProcessedPlatform.type === 'BOTH') {
-        // 如果是双属性平台，需要找到该平台名称下的所有原始平台ID
-        const platformName = selectedProcessedPlatform.name;
-        const relatedPlatformIds = platforms
-          .filter(p => p.name === platformName && p.status === 'ACTIVE')
-          .map(p => p.id);
-        
-        if (relatedPlatformIds.length > 1) {
-          // 使用多平台ID格式
-          filters.aiPlatformIds = relatedPlatformIds.join(',');
-          delete filters.aiPlatformId;
-          console.log('设置双属性平台过滤，平台名称:', platformName, 'IDs:', filters.aiPlatformIds);
-        } else if (relatedPlatformIds.length === 1) {
-          // 只有一个ID，使用单平台格式
-          filters.aiPlatformId = relatedPlatformIds[0];
-          console.log('设置单平台过滤（来自双属性）:', filters.aiPlatformId);
-        }
-      } else {
-        // 检查是否是逗号分隔的ID列表（多平台格式）
-        if (typeof filters.aiPlatformId === 'string' && filters.aiPlatformId.includes(',')) {
-          // 处理多个平台ID
-          filters.aiPlatformIds = filters.aiPlatformId;
-          delete filters.aiPlatformId;
-          console.log('设置多平台过滤为:', filters.aiPlatformIds);
-        } else {
-          // 处理单个平台ID
-          if (typeof filters.aiPlatformId === 'string') {
-            const platformId = parseInt(filters.aiPlatformId, 10);
-            if (isNaN(platformId) || platformId <= 0) {
-              console.warn('无效的平台ID:', filters.aiPlatformId);
-              delete filters.aiPlatformId;
-            } else {
-              filters.aiPlatformId = platformId;
-              console.log('设置单平台过滤为:', filters.aiPlatformId);
-            }
-          } else {
-            console.log('设置平台过滤为:', filters.aiPlatformId);
-          }
-        }
-      }
-    }
-    
-    // 处理收藏过滤
-    if (filters.onlyFavorites === true) {
-      filters.onlyFavorites = true;
-      console.log('启用收藏过滤');
-    } else {
-      delete filters.onlyFavorites;
-      console.log('禁用收藏过滤');
-    }
-    
-    // 处理我的作品过滤
-    if (filters.onlyMyPosts === true) {
-      filters.onlyMyPosts = true;
-      console.log('启用我的作品过滤');
-    } else {
-      delete filters.onlyMyPosts;
-      console.log('禁用我的作品过滤');
-    }
-    
-    console.log('最终发送的过滤参数:', filters);
-    
     fetchPosts(filters);
-  }, [fetchPosts, selectedType, processedPlatforms, platforms]);
+  }, [fetchPosts]);
 
   const handleMediaDimensionChange = useCallback((postId: number, aspectRatio: number | null) => {
     // 我们仍然收集媒体尺寸信息，但不再用于布局计算

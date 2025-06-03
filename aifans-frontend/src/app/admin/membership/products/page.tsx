@@ -35,6 +35,7 @@ import * as z from 'zod';
 import axios from 'axios';
 import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import api from '@/lib/api/api';
 
 // 会员产品类型定义
 interface MembershipProduct {
@@ -82,7 +83,7 @@ export default function MembershipProductsPage() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/admin/membership/products');
+      const response = await api.get('/api/admin/membership/products');
       setProducts(response.data);
     } catch (error) {
       toast({
@@ -125,7 +126,7 @@ export default function MembershipProductsPage() {
     if (!window.confirm('确定要删除这个会员产品吗？')) return;
     
     try {
-      await axios.delete(`/api/admin/membership/products/${id}`);
+      await api.delete(`/api/admin/membership/products/${id}`);
       toast({ title: '删除成功' });
       fetchProducts();
     } catch (error) {
@@ -140,10 +141,10 @@ export default function MembershipProductsPage() {
   const onSubmit = async (data: ProductFormValues) => {
     try {
       if (isEditing && currentProduct) {
-        await axios.patch(`/api/admin/membership/products/${currentProduct.id}`, data);
+        await api.patch(`/api/admin/membership/products/${currentProduct.id}`, data);
         toast({ title: '更新成功' });
       } else {
-        await axios.post('/api/admin/membership/products', data);
+        await api.post('/api/admin/membership/products', data);
         toast({ title: '创建成功' });
       }
       setOpenDialog(false);

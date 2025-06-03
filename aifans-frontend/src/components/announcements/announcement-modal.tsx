@@ -104,7 +104,6 @@ export default function AnnouncementModal({ onClose }: AnnouncementModalProps) {
         return newSet;
       });
       // 静默失败，不影响用户体验
-      console.error('记录公告查看失败:', error);
     }
   };
 

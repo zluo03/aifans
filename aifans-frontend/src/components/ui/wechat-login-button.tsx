@@ -3,39 +3,29 @@
 import React, { useEffect, useState } from 'react';
 import { authApi } from '@/lib/api/auth';
 import { toast } from 'sonner';
+import axios from 'axios';
 
 export function WechatLoginButton() {
   const [isLoading, setIsLoading] = useState(false);
   const [isError, setIsError] = useState(false);
 
   const handleWechatLogin = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setIsError(false);
+      // 获取微信登录配置
+      const response = await axios.get('/api/auth/wechat/login-url');
+      const { authUrl } = response.data;
       
-      console.log('正在获取微信登录配置...');
-      const config = await authApi.getWechatLoginConfig();
-      console.log('微信登录配置:', {
-        appId: config.appId,
-        redirectUri: config.redirectUri,
-        scope: config.scope
-      });
-      
-      // 验证配置是否完整
-      if (!config.appId || !config.redirectUri || !config.scope) {
-        throw new Error('微信登录配置不完整');
+      if (!authUrl) {
+        toast.error('获取微信登录链接失败');
+        setIsLoading(false);
+        return;
       }
       
-      // 构建微信授权URL
-      const authUrl = `https://open.weixin.qq.com/connect/qrconnect?appid=${config.appId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&response_type=code&scope=${config.scope}&state=${Math.random().toString(36).substring(7)}#wechat_redirect`;
-      
-      console.log('即将跳转到微信授权页面:', authUrl);
+      // 跳转到微信授权页面
       window.location.href = authUrl;
-    } catch (error: any) {
-      console.error('微信登录失败:', error);
-      setIsError(true);
-      toast.error(error.message || '微信登录暂时不可用，请稍后再试');
-    } finally {
+    } catch (error) {
+      toast.error('微信登录失败，请稍后再试');
       setIsLoading(false);
     }
   };

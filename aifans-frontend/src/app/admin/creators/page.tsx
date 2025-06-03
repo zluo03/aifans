@@ -9,6 +9,9 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Star, Trophy } from 'lucide-react';
+import { DataTable } from '@/components/ui/table/data-table';
+import { columns } from './components/columns';
+import SyncCreatorsButton from './components/sync-button';
 
 interface Creator {
   id: number;
@@ -286,59 +289,16 @@ export default function AdminCreatorsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-semibold">排名</th>
-                      <th className="text-left py-3 px-4 font-semibold">昵称</th>
-                      <th className="text-left py-3 px-4 font-semibold">积分</th>
-                      <th className="text-left py-3 px-4 font-semibold">用户ID</th>
-                      <th className="text-left py-3 px-4 font-semibold">创建时间</th>
-                      <th className="text-left py-3 px-4 font-semibold">最后更新</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {creators.map((creator, index) => (
-                      <tr key={creator.id} className="border-b hover:bg-muted/50 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            {index === 0 && <span className="text-2xl">🥇</span>}
-                            {index === 1 && <span className="text-2xl">🥈</span>}
-                            {index === 2 && <span className="text-2xl">🥉</span>}
-                            {index > 2 && (
-                              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
-                                {index + 1}
-                              </div>
-                            )}
-                            {index <= 2 && (
-                              <span className="ml-2 font-bold text-lg">#{index + 1}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-medium">{creator.nickname}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <Star className="w-4 h-4 text-amber-500" />
-                            <span className="text-amber-600 font-bold text-lg">{creator.score.toLocaleString()}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">{creator.userId}</td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {new Date(creator.createdAt).toLocaleDateString('zh-CN')}
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {new Date(creator.updatedAt).toLocaleDateString('zh-CN')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable columns={columns} data={creators} />
               </div>
             )}
           </CardContent>
         </Card>
+
+        <div className="flex justify-between items-center">
+          <SyncCreatorsButton />
+          <Button onClick={() => router.push('/admin/creators/create')}>添加创作者</Button>
+        </div>
       </div>
     );
 } 

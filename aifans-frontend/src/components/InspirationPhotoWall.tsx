@@ -121,7 +121,6 @@ export default function InspirationPhotoWall() {
           setPhotos([]);
         }
       } catch (error) {
-        console.error('获取照片失败:', error);
         setPhotos([]);
       } finally {
         setIsLoading(false);

@@ -1,7 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PostType, PostVideoCategory } from '@prisma/client';
-import { IsBoolean, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { PostType } from '@prisma/client';
+import { IsBoolean, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+
+// 定义PostVideoCategory枚举，因为Prisma中已经移除
+export enum PostVideoCategory {
+  IMAGE_TO_VIDEO = 'IMAGE_TO_VIDEO',
+  TEXT_TO_VIDEO = 'TEXT_TO_VIDEO',
+  FRAME_INTERPOLATION = 'FRAME_INTERPOLATION',
+  MULTI_IMAGE_REF = 'MULTI_IMAGE_REF'
+}
 
 export class CreatePostDto {
   @ApiProperty({

@@ -26,11 +26,20 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
+  const [previousPage, setPreviousPage] = useState('');
 
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
+    }
+    
+    // 保存前一个页面URL
+    if (typeof window !== 'undefined') {
+      const referrer = document.referrer;
+      if (referrer && !referrer.includes('/login')) {
+        setPreviousPage(referrer);
+      }
     }
     
     // 初始化表单
@@ -139,7 +148,7 @@ export default function EditProfilePage() {
       console.log('强制刷新用户信息结果:', refreshResult, '当前用户信息:', useAuthStore.getState().user);
       
       // 3. 等待短暂时间确保状态已更新
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // 4. 手动更新当前状态确保UI一致性
       useAuthStore.setState((state) => {
@@ -164,14 +173,105 @@ export default function EditProfilePage() {
         return updatedState;
       });
       
-      // 记录日志
-      console.log('最终更新后的用户信息:', useAuthStore.getState().user);
+      // 5. 同步更新创作者信息
+      try {
+        // 获取最新的token
+        const currentToken = useAuthStore.getState().token;
+        
+        if (currentToken && user) {
+          console.log('开始同步更新创作者信息...');
+          
+          // 先查creator信息
+          const creatorRes = await fetch(`/api/creators/user/${user.id}`);
+          let creatorPayload: any = null;
+          
+          if (creatorRes.ok) {
+            const creatorData = await creatorRes.json();
+            if (creatorData) {
+              // 用新昵称替换，其他字段保持不变
+              creatorPayload = {
+                ...creatorData,
+                nickname: nickname.trim(),
+                avatarUrl: avatarUrl || user.avatarUrl || '',
+                // 兼容images/videos/audios为undefined的情况
+                images: Array.isArray(creatorData.images) ? creatorData.images : [],
+                videos: Array.isArray(creatorData.videos) ? creatorData.videos : [],
+                audios: Array.isArray(creatorData.audios) ? creatorData.audios : [],
+              };
+            }
+          }
+          
+          if (!creatorPayload) {
+            // creator不存在，按初次创建逻辑
+            creatorPayload = {
+              nickname: nickname.trim(),
+              avatarUrl: avatarUrl || user.avatarUrl || '',
+              bio: '',
+              expertise: '',
+              backgroundUrl: '',
+              images: [],
+              videos: [],
+              audios: [],
+            };
+          }
+          
+          console.log('发送创作者信息更新请求，payload:', {
+            nickname: creatorPayload.nickname,
+            hasAvatarUrl: !!creatorPayload.avatarUrl
+          });
+          
+          // 使用API代理路径，确保请求正确路由
+          try {
+            console.log('使用fetch方式发送请求...');
+            const creatorResponse = await fetch('/api/creators', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(creatorPayload)
+            });
+            
+            if (creatorResponse.ok) {
+              console.log('创作者信息更新成功');
+            } else {
+              const errorText = await creatorResponse.text();
+              console.error('创作者信息更新失败:', errorText, '状态码:', creatorResponse.status);
+              
+              // 尝试使用axios作为备选方案
+              console.log('尝试使用axios作为备选方案...');
+              try {
+                const axios = (await import('axios')).default;
+                const axiosResponse = await axios.post('/api/creators', creatorPayload, {
+                  headers: {
+                    'Content-Type': 'application/json'
+                  }
+                });
+                
+                console.log('使用axios更新创作者信息结果:', axiosResponse.status);
+              } catch (axiosError: any) {
+                console.error('使用axios更新创作者信息失败:', 
+                  axiosError.response?.status,
+                  axiosError.response?.data
+                );
+              }
+            }
+          } catch (fetchError) {
+            console.error('fetch请求失败:', fetchError);
+          }
+        }
+      } catch (creatorError) {
+        console.error('同步更新创作者信息失败:', creatorError);
+        // 创作者更新失败不影响主流程
+      }
       
       toast.success('个人资料已更新');
       
-      // 5. 使用硬重定向而不是客户端导航（确保完全刷新）
-      console.log('准备重定向到个人资料页面...');
-      window.location.href = '/profile';
+      // 返回之前的页面，如果没有则返回个人资料页面
+      if (previousPage) {
+        window.location.href = previousPage;
+      } else {
+        router.back();
+      }
     } catch (error) {
       console.error('更新个人资料失败:', error);
       toast.error('更新个人资料失败');
@@ -200,6 +300,13 @@ export default function EditProfilePage() {
       
       // 刷新用户信息
       await forceRefreshUserProfile();
+      
+      // 返回之前的页面，如果没有则保留在当前页面
+      if (previousPage) {
+        window.location.href = previousPage;
+      } else {
+        router.back();
+      }
     } catch (error: any) {
       console.error('兑换失败:', error);
       toast.error(error.response?.data?.message || '兑换失败');
@@ -381,7 +488,7 @@ export default function EditProfilePage() {
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => router.push('/profile')}
+                onClick={() => router.back()}
                 disabled={saving}
               >
                 取消
