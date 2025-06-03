@@ -110,6 +110,43 @@ export interface UploadLimit {
 }
 
 export async function getUploadLimit(module: string): Promise<UploadLimit> {
-  const res = await axios.get(`/api/admin/settings/upload-limits/${module}`);
-  return res.data;
+  try {
+    // 先尝试直接路径
+    let response = await fetch(`/public/settings/upload-limits/${module}`);
+    
+    // 如果直接路径失败，尝试API路径
+    if (!response.ok) {
+      console.log(`直接路径获取${module}模块上传限制失败，尝试API路径`);
+      response = await fetch(`/api/public/settings/upload-limits/${module}`);
+    }
+    
+    // 如果公共API失败，尝试管理员API
+    if (!response.ok) {
+      console.log(`公共API获取${module}模块上传限制失败，尝试管理员API`);
+      response = await fetch(`/api/admin/settings/upload-limits/${module}`);
+    }
+    
+    if (response.ok) {
+      const limit = await response.json();
+      console.log(`获取到${module}模块上传限制:`, limit);
+      return limit;
+    } else {
+      throw new Error(`获取${module}模块上传限制失败`);
+    }
+  } catch (error) {
+    console.warn(`获取${module}模块上传限制失败，使用默认值`, error);
+    
+    // 根据模块返回默认值
+    if (module === 'notes') {
+      return { imageMaxSizeMB: 5, videoMaxSizeMB: 50 };
+    } else if (module === 'inspiration') {
+      return { imageMaxSizeMB: 10, videoMaxSizeMB: 100 };
+    } else if (module === 'screenings') {
+      return { imageMaxSizeMB: 10, videoMaxSizeMB: 500 };
+    } else if (module === 'resources') {
+      return { imageMaxSizeMB: 10, videoMaxSizeMB: 100, audioMaxSizeMB: 20 };
+    } else {
+      return { imageMaxSizeMB: 5, videoMaxSizeMB: 50 };
+    }
+  }
 } 

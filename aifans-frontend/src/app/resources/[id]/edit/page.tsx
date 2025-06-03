@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/store/auth-store';
 import { toast } from 'sonner';
 import { FileUpload } from '@/components/ui/file-upload';
 import dynamic from 'next/dynamic';
+import { getUploadLimit } from "@/lib/utils/upload-limits";
 
 // 动态导入BlockNote编辑器，禁用SSR
 const BlockNoteEditor = dynamic(
@@ -38,10 +39,15 @@ interface Resource {
   };
 }
 
-export default function EditResourcePage() {
+interface ResourceEditPageProps {
+  params: {
+    id?: string;
+  };
+}
+
+export default function ResourceEditPage({ params }: ResourceEditPageProps) {
   const router = useRouter();
-  const params = useParams();
-  const { user, token, isLoading: authLoading } = useAuthStore();
+  const { token } = useAuthStore();
   const [resource, setResource] = useState<Resource | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -49,10 +55,79 @@ export default function EditResourcePage() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
-  const resourceId = params.id as string;
+  const resourceId = params?.id as string;
+
+  // 检查用户是否为管理员
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      setCheckingAuth(true);
+      console.log('开始验证管理员权限...');
+      
+      // 如果没有token，直接重定向到首页
+      if (!token) {
+        console.log('未找到认证令牌，重定向到首页');
+        toast.error('请先登录');
+        router.push('/');
+        return;
+      }
+      
+      try {
+        // 确保token格式正确
+        const formattedToken = token?.startsWith('Bearer ') ? token : `Bearer ${token}`;
+        console.log('认证令牌状态:', !!formattedToken);
+        
+        // 直接从用户对象判断是否为管理员
+        const { user } = useAuthStore.getState();
+        if (user && user.role === 'ADMIN') {
+          console.log('用户已是管理员，跳过API验证');
+          setIsAdmin(true);
+          setCheckingAuth(false);
+          return;
+        }
+        
+        console.log('调用API验证管理员权限...');
+        const response = await fetch('/api/check-admin', {
+          headers: {
+            'Authorization': formattedToken
+          },
+          cache: 'no-cache'
+        });
+        
+        console.log('API响应状态:', response.status);
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: `HTTP错误 ${response.status}` }));
+          console.error('验证失败详情:', errorData);
+          throw new Error(errorData.error || '验证管理员权限失败');
+        }
+        
+        const data = await response.json();
+        console.log('验证结果:', data);
+        
+        if (!data.isAdmin) {
+          console.log('用户不是管理员，重定向到首页');
+          toast.error('您没有权限访问此页面');
+          router.push('/');
+          return;
+        }
+        
+        console.log('验证成功，用户是管理员');
+        setIsAdmin(true);
+      } catch (error) {
+        console.error('验证管理员权限失败:', error);
+        toast.error(error instanceof Error ? error.message : '验证权限失败，请重新登录');
+        router.push('/');
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    
+    checkAdminStatus();
+  }, [token, router]);
 
   // 内容变化处理函数
   const handleContentChange = useCallback((newContent: string) => {
@@ -80,9 +155,20 @@ export default function EditResourcePage() {
         return [{ url: '', key: '' }];
       }
 
-      // 验证文件大小 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('图片大小不能超过5MB');
+      // 获取资源模块的上传限制
+      let maxSizeMB = 10; // 默认值
+      try {
+        const limit = await getUploadLimit('resources');
+        if (limit && limit.imageMaxSizeMB) {
+          maxSizeMB = limit.imageMaxSizeMB;
+        }
+      } catch (limitError) {
+        console.warn('获取上传限制失败，使用默认值', limitError);
+      }
+
+      // 验证文件大小
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
 
@@ -140,11 +226,28 @@ export default function EditResourcePage() {
   }, [token]);
 
   useEffect(() => {
-    // 直接获取资源和分类，不进行严格的权限检查
-    // 因为编辑按钮本身就有权限控制，只有管理员才能看到
-    fetchResource();
-    fetchCategories();
-  }, [resourceId]);
+    // 只有在确认为管理员后才获取分类和资源数据
+    if (isAdmin && resourceId) {
+      fetchCategories();
+      fetchResource();
+    }
+  }, [isAdmin, resourceId]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/resource-categories');
+      if (!response.ok) {
+        throw new Error('获取分类失败');
+      }
+      const data = await response.json();
+      setCategories(data);
+    } catch (error) {
+      console.error('获取分类失败:', error);
+      toast.error('获取分类失败');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
 
   const fetchResource = async () => {
     try {
@@ -164,24 +267,6 @@ export default function EditResourcePage() {
       console.error('获取资源失败:', error);
       toast.error('获取资源失败');
       router.push('/resources');
-    } finally {
-      setPageLoading(false);
-    }
-  };
-
-  const fetchCategories = async () => {
-    try {
-      const response = await fetch('/api/resource-categories');
-      if (!response.ok) {
-        throw new Error('获取分类失败');
-      }
-      const data = await response.json();
-      setCategories(data);
-    } catch (error) {
-      console.error('获取分类失败:', error);
-      toast.error('获取分类失败');
-    } finally {
-      setCategoriesLoading(false);
     }
   };
 
@@ -205,16 +290,36 @@ export default function EditResourcePage() {
 
     setLoading(true);
     try {
-      if (!token) {
+      // 尝试从localStorage获取最新的token
+      let authToken = token;
+      
+      try {
+        if (typeof window !== 'undefined') {
+          const authStorage = localStorage.getItem('auth-storage');
+          if (authStorage) {
+            const { state } = JSON.parse(authStorage);
+            if (state?.token) {
+              authToken = state.token;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取localStorage中的token失败:', error);
+      }
+      
+      if (!authToken) {
         toast.error('请先登录');
         return;
       }
       
+      // 确保token格式正确
+      const formattedToken = authToken?.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+      
       const response = await fetch(`/api/resources/${resourceId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': formattedToken,
         },
         body: JSON.stringify({
           title: title.trim(),
@@ -225,58 +330,35 @@ export default function EditResourcePage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: `HTTP错误 ${response.status}` }));
         throw new Error(errorData.message || '更新资源失败');
       }
 
-      const data = await response.json();
       toast.success('资源更新成功');
-      router.push(`/resources/${data.id}`);
+      router.push(`/resources/${resourceId}`);
     } catch (error) {
       console.error('更新资源失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      toast.error(`更新资源失败: ${errorMessage}`);
+      toast.error(error instanceof Error ? error.message : '更新资源失败');
     } finally {
       setLoading(false);
     }
   };
 
-  // 移除严格的权限检查，因为编辑按钮本身就有权限控制
-
-  if (pageLoading) {
+  // 如果正在检查权限，显示加载状态
+  if (checkingAuth) {
     return (
-      <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
-        <div className="flex-1 overflow-y-auto overflow-x-hidden content-scrollbar">
-          <div className="container mx-auto px-4 py-8">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            </div>
-          </div>
+      <div className="flex items-center justify-center h-[calc(100vh-172px)]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-lg">正在验证权限...</p>
         </div>
       </div>
     );
   }
 
-  if (!resource) {
-    return (
-      <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
-        <div className="flex-1 overflow-y-auto overflow-x-hidden content-scrollbar">
-          <div className="container mx-auto px-4 py-8">
-            <div className="max-w-4xl mx-auto">
-              <div className="text-center py-12">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">资源不存在</h3>
-                <p className="text-gray-500 mb-4">您要编辑的资源可能已被删除或不存在</p>
-                <Button onClick={() => router.push('/resources')}>
-                  返回资源列表
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  // 如果不是管理员，不渲染页面内容（应该已经被重定向）
+  if (!isAdmin) {
+    return null;
   }
 
   return (
@@ -379,6 +461,9 @@ export default function EditResourcePage() {
                     editable={true}
                     onSave={handleAutoSave}
                   />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    支持上传图片(最大5MB)、视频(最大50MB)、音频(最大20MB)和压缩文件(zip、7z、tar等)
+                  </p>
                 </div>
 
                 {/* 提交按钮 */}

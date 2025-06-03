@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import axios from "axios";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { processImageUrl } from "@/lib/utils/image-url";
+import { api } from "@/lib/api";
+import { getUploadLimit } from "@/lib/utils/upload-limits";
 
 interface BlockNoteEditorProps {
   initialContent?: string;
@@ -23,37 +25,113 @@ interface BlockNoteEditorProps {
 // 自定义上传函数
 const uploadFile = async (file: File): Promise<string> => {
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folder", "notes");
-
-    // 获取认证token
+    // 获取文件类型
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    const isAudio = file.type.startsWith('audio/');
+    const isArchive = file.name.match(/\.(zip|7z|tar|gz|rar|dmg)$/i) !== null;
+    
+    console.log('准备上传文件:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isImage,
+      isVideo,
+      isAudio,
+      isArchive
+    });
+    
+    // 从认证store获取token
     const { token } = useAuthStore.getState();
+    console.log('Token存在:', !!token);
+
     if (!token) {
-      throw new Error("请先登录");
+      toast.error('请先登录');
+      throw new Error('请先登录');
     }
 
-    const response = await axios.post("/api/storage/upload", formData, {
+    // 获取资源模块的上传限制
+    let maxSizeMB = 5; // 默认图片大小限制5MB
+    try {
+      // 使用新的getUploadLimit函数获取上传限制
+      const limit = await getUploadLimit('resources');
+      
+      if (isImage && limit.imageMaxSizeMB) {
+        maxSizeMB = limit.imageMaxSizeMB;
+      } else if (isVideo && limit.videoMaxSizeMB) {
+        maxSizeMB = limit.videoMaxSizeMB;
+      } else if (isAudio) {
+        // 音频文件使用配置的限制或默认20MB
+        maxSizeMB = limit.audioMaxSizeMB || 20;
+      } else if (isArchive) {
+        // 压缩文件限制
+        maxSizeMB = 500;
+      }
+    } catch (limitError) {
+      console.warn('获取上传限制失败，使用默认值', limitError);
+      // 使用默认值
+      if (isImage) maxSizeMB = 5; // 图片默认5MB
+      if (isVideo) maxSizeMB = 50; // 视频默认50MB
+      if (isAudio) maxSizeMB = 20; // 音频默认20MB
+      if (isArchive) maxSizeMB = 500; // 压缩文件默认500MB
+    }
+    
+    // 验证文件大小
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > maxSizeMB) {
+      const fileTypeText = isImage ? '图片' : 
+                           isVideo ? '视频' : 
+                           isAudio ? '音频' : 
+                           isArchive ? '压缩文件' : '文件';
+      const errorMsg = `${fileTypeText}大小不能超过${maxSizeMB}MB，当前大小: ${fileSizeMB.toFixed(2)}MB`;
+      toast.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    // 设置正确的文件夹
+    let folder = 'resources';
+    if (isVideo) folder = 'resources/videos';
+    else if (isImage) folder = 'resources/images';
+    else if (isAudio) folder = 'resources/audios';
+    else if (isArchive) folder = 'resources/archives';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+
+    // 直接使用后端API上传
+    const response = await api.post('/storage/upload', formData, {
       headers: {
-        "Content-Type": "multipart/form-data",
-        "Authorization": `Bearer ${token}`,
-      },
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`
+      }
     });
 
-    if (response.data.url) {
-      // 直接返回原始URL，不添加时间戳
-      const url = response.data.url;
-      console.log("上传成功，文件URL:", url);
-      return url;
+    console.log('上传响应:', response);
+
+    if (!response || !response.data || !response.data.url) {
+      throw new Error('上传失败：未返回文件URL');
     }
-    throw new Error("上传失败：未返回文件URL");
+
+    // 直接返回原始URL，不添加时间戳
+    const url = response.data.url;
+    console.log('上传成功，文件URL:', url);
+    
+    const fileTypeText = isImage ? '图片' : 
+                         isVideo ? '视频' : 
+                         isAudio ? '音频' : 
+                         isArchive ? '压缩文件' : '文件';
+    toast.success(`${fileTypeText}上传成功`);
+    return url;
   } catch (error) {
-    console.error("文件上传失败:", error);
+    console.error('文件上传失败:', error);
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.error || error.message;
       toast.error(`文件上传失败: ${message}`);
+    } else if (error instanceof Error) {
+      toast.error(`文件上传失败: ${error.message}`);
     } else {
-      toast.error("文件上传失败");
+      toast.error("文件上传失败: 未知错误");
     }
     throw error;
   }

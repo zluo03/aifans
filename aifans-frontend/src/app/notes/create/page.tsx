@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { notesApi } from '@/lib/api';
 import { noteCategoriesApi } from '@/lib/api';
+import { api } from '@/lib/api/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/lib/store/auth-store';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ import Link from 'next/link';
 import { FileUpload } from '@/components/ui/file-upload';
 import dynamic from 'next/dynamic';
 import { usePermissions } from '@/hooks/use-permissions';
+import { getUploadLimit } from "@/lib/utils/upload-limits";
 
 // 动态导入BlockNote编辑器，禁用SSR
 const BlockNoteEditor = dynamic(
@@ -93,67 +95,131 @@ export default function CreateNotePage() {
         return [{ url: '', key: '' }];
       }
 
-      // 验证文件大小 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('图片大小不能超过5MB');
+      // 获取笔记模块的上传限制
+      let maxSizeMB = 5; // 默认值
+      try {
+        const limit = await getUploadLimit('notes');
+        if (limit && limit.imageMaxSizeMB) {
+          maxSizeMB = limit.imageMaxSizeMB;
+        }
+      } catch (limitError) {
+        console.warn('获取上传限制失败，使用默认值', limitError);
+      }
+
+      // 验证文件大小
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
 
-        console.log('准备上传文件:', {
-          name: file.name,
-          size: file.size,
-          type: file.type
-        });
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('folder', 'notes/covers');
-
+      console.log('准备上传文件:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+      
       // 从认证store获取token
       const { token } = useAuthStore.getState();
-        console.log('Token存在:', !!token);
+      console.log('Token存在:', !!token);
 
       if (!token) {
         toast.error('请先登录');
         return [{ url: '', key: '' }];
       }
 
-        const response = await fetch('/api/storage/upload', {
-          method: 'POST',
-          body: formData,
+      // 创建FormData对象
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'notes/covers');
+
+      let response;
+      let successfulUpload = false;
+      
+      // 尝试方法1：使用api实例上传
+      try {
+        console.log('尝试方法1：使用api实例上传');
+        response = await api.post('/storage/upload', formData, {
           headers: {
-            'Authorization': `Bearer ${token}`,
-          },
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${token}`
+          }
         });
-
-        console.log('响应状态:', response.status);
-
-        if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch (parseError) {
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
-        }
-        console.error('上传失败详情:', errorData);
-        const errorMessage = errorData.error || '未知错误';
-        const errorDetails = errorData.details ? ` (${errorData.details})` : '';
-        throw new Error(`${errorMessage}${errorDetails}`);
-        }
-
-        const result = await response.json();
-        console.log('上传成功结果:', result);
+        console.log('方法1上传成功:', response.data);
+        successfulUpload = true;
+      } catch (uploadErr) {
+        console.error('方法1上传失败:', uploadErr);
         
-        // 设置封面URL
-        setCoverImageUrl(result.url);
+        // 尝试方法2：使用fetch直接上传
+        try {
+          console.log('尝试方法2：使用fetch直接上传');
+          const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+          const fetchResponse = await fetch(`${baseUrl}/api/storage/upload`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            body: formData,
+            credentials: 'include'
+          });
+          
+          console.log('fetch响应状态:', fetchResponse.status);
+          const responseText = await fetchResponse.text();
+          console.log('fetch响应内容:', responseText);
+          
+          if (fetchResponse.ok) {
+            response = { data: JSON.parse(responseText) };
+            console.log('方法2上传成功:', response.data);
+            successfulUpload = true;
+          } else {
+            throw new Error(`Fetch上传失败: ${fetchResponse.status}, ${responseText}`);
+          }
+        } catch (fetchErr) {
+          console.error('方法2上传失败:', fetchErr);
+          
+          // 尝试方法3：使用相对路径
+          try {
+            console.log('尝试方法3：使用相对路径');
+            const fetchResponse = await fetch('/api/storage/upload', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              body: formData
+            });
+            
+            console.log('方法3响应状态:', fetchResponse.status);
+            const responseText = await fetchResponse.text();
+            console.log('方法3响应内容:', responseText);
+            
+            if (fetchResponse.ok) {
+              response = { data: JSON.parse(responseText) };
+              console.log('方法3上传成功:', response.data);
+              successfulUpload = true;
+            } else {
+              throw new Error(`相对路径上传失败: ${fetchResponse.status}, ${responseText}`);
+            }
+          } catch (relativeErr) {
+            console.error('方法3上传失败:', relativeErr);
+            throw relativeErr; // 所有方法都失败，抛出最后一个错误
+          }
+        }
+      }
+      
+      if (!successfulUpload || !response || !response.data) {
+        throw new Error('所有上传尝试均失败');
+      }
+      
+      // 设置封面URL
+      setCoverImageUrl(response.data.url);
       toast.success(`封面图片上传成功`);
-      return [result];
-      } catch (error) {
-        console.error('Upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      return [response.data];
+    } catch (error) {
+      console.error('上传错误:', error);
+      const errorMessage = error instanceof Error ? error.message : 
+                          (typeof error === 'object' ? JSON.stringify(error) : String(error));
       toast.error(`封面图片上传失败: ${errorMessage}`);
       return [{ url: '', key: '' }];
-      }
+    }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

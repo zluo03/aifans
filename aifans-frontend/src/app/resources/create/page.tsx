@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/store/auth-store';
 import { toast } from 'sonner';
 import { FileUpload } from '@/components/ui/file-upload';
 import dynamic from 'next/dynamic';
+import { getUploadLimit } from "@/lib/utils/upload-limits";
 
 // 动态导入BlockNote编辑器，禁用SSR
 const BlockNoteEditor = dynamic(
@@ -37,6 +38,76 @@ export default function CreateResourcePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // 检查用户是否为管理员
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      setCheckingAuth(true);
+      console.log('开始验证管理员权限...');
+      
+      // 如果没有token，直接重定向到首页
+      if (!token) {
+        console.log('未找到认证令牌，重定向到首页');
+        toast.error('请先登录');
+        router.push('/');
+        return;
+      }
+      
+      try {
+        // 确保token格式正确
+        const formattedToken = token?.startsWith('Bearer ') ? token : `Bearer ${token}`;
+        console.log('认证令牌状态:', !!formattedToken);
+        
+        // 直接从用户对象判断是否为管理员
+        const { user } = useAuthStore.getState();
+        if (user && user.role === 'ADMIN') {
+          console.log('用户已是管理员，跳过API验证');
+          setIsAdmin(true);
+          setCheckingAuth(false);
+          return;
+        }
+        
+        console.log('调用API验证管理员权限...');
+        const response = await fetch('/api/check-admin', {
+          headers: {
+            'Authorization': formattedToken
+          },
+          cache: 'no-cache'
+        });
+        
+        console.log('API响应状态:', response.status);
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: `HTTP错误 ${response.status}` }));
+          console.error('验证失败详情:', errorData);
+          throw new Error(errorData.error || '验证管理员权限失败');
+        }
+        
+        const data = await response.json();
+        console.log('验证结果:', data);
+        
+        if (!data.isAdmin) {
+          console.log('用户不是管理员，重定向到首页');
+          toast.error('您没有权限访问此页面');
+          router.push('/');
+          return;
+        }
+        
+        console.log('验证成功，用户是管理员');
+        setIsAdmin(true);
+      } catch (error) {
+        console.error('验证管理员权限失败:', error);
+        toast.error(error instanceof Error ? error.message : '验证权限失败，请重新登录');
+        router.push('/');
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    
+    checkAdminStatus();
+  }, [token, router]);
 
   // 内容变化处理函数
   const handleContentChange = useCallback((newContent: string) => {
@@ -64,9 +135,20 @@ export default function CreateResourcePage() {
         return [{ url: '', key: '' }];
       }
 
-      // 验证文件大小 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('图片大小不能超过5MB');
+      // 获取资源模块的上传限制
+      let maxSizeMB = 10; // 默认值
+      try {
+        const limit = await getUploadLimit('resources');
+        if (limit && limit.imageMaxSizeMB) {
+          maxSizeMB = limit.imageMaxSizeMB;
+        }
+      } catch (limitError) {
+        console.warn('获取上传限制失败，使用默认值', limitError);
+      }
+
+      // 验证文件大小
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
 
@@ -76,58 +158,126 @@ export default function CreateResourcePage() {
         type: file.type
       });
       
+      // 尝试从localStorage获取最新的token
+      let authToken = token;
+      
+      try {
+        if (typeof window !== 'undefined') {
+          const authStorage = localStorage.getItem('auth-storage');
+          if (authStorage) {
+            const { state } = JSON.parse(authStorage);
+            if (state?.token) {
+              authToken = state.token;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取localStorage中的token失败:', error);
+      }
+      
+      // 确保token格式正确
+      authToken = authToken?.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+      
+      if (!authToken) {
+        toast.error('请先登录');
+        return [{ url: '', key: '' }];
+      }
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('folder', 'resources/covers');
 
-      if (!token) {
-        toast.error('请先登录');
-        return [{ url: '', key: '' }];
-      }
+      console.log('准备发送上传请求，token状态:', !!authToken);
 
-      const response = await fetch('/api/storage/upload', {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      console.log('响应状态:', response.status);
-
-      if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch (parseError) {
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
+      // 尝试使用三种不同的方法上传
+      let response: Response | null = null;
+      let successfulUpload = false;
+      let result: { url: string; key: string } | null = null;
+      
+      // 方法1：直接使用fetch API
+      try {
+        console.log('尝试方法1：使用fetch API');
+        response = await fetch('/api/storage/upload', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Authorization': authToken,
+          },
+          cache: 'no-cache'
+        });
+        
+        console.log('方法1响应状态:', response.status);
+        
+        if (response.ok) {
+          result = await response.json();
+          console.log('方法1上传成功:', result);
+          successfulUpload = true;
+        } else {
+          let errorText = await response.text();
+          console.error('方法1上传失败:', response.status, errorText);
+          
+          try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(`上传失败: ${errorJson.error || errorJson.message || '未知错误'}`);
+          } catch (e) {
+            throw new Error(`上传失败: HTTP ${response.status} ${response.statusText}`);
+          }
         }
-        console.error('上传失败详情:', errorData);
-        const errorMessage = errorData.error || '未知错误';
-        const errorDetails = errorData.details ? ` (${errorData.details})` : '';
-        throw new Error(`${errorMessage}${errorDetails}`);
+      } catch (error) {
+        console.error('方法1上传失败:', error);
+        
+        // 尝试方法2：使用代理API
+        try {
+          console.log('尝试方法2：使用代理API');
+          const proxyResponse = await fetch('/api/proxy/api/storage/upload', {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Authorization': authToken
+            },
+            cache: 'no-cache'
+          });
+          
+          console.log('方法2响应状态:', proxyResponse.status);
+          const responseText = await proxyResponse.text();
+          console.log('方法2响应内容:', responseText);
+          
+          if (proxyResponse.ok) {
+            result = JSON.parse(responseText);
+            console.log('方法2上传成功:', result);
+            successfulUpload = true;
+          } else {
+            throw new Error(`代理上传失败: ${proxyResponse.status}, ${responseText}`);
+          }
+        } catch (proxyErr) {
+          console.error('方法2上传失败:', proxyErr);
+          throw proxyErr; // 所有方法都失败，抛出最后一个错误
+        }
       }
-
-      const result = await response.json();
-      console.log('上传成功结果:', result);
+      
+      if (!successfulUpload || !result) {
+        throw new Error('所有上传尝试均失败');
+      }
       
       // 设置封面URL
       setCoverImageUrl(result.url);
       toast.success(`封面图片上传成功`);
       return [result];
     } catch (error) {
-      console.error('Upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error('上传错误:', error);
+      const errorMessage = error instanceof Error ? error.message : 
+                          (typeof error === 'object' ? JSON.stringify(error) : String(error));
       toast.error(`封面图片上传失败: ${errorMessage}`);
       return [{ url: '', key: '' }];
     }
   }, [token]);
 
   useEffect(() => {
-    // 直接获取分类，不进行严格的权限检查
-    // 因为创建按钮本身就有权限控制，只有管理员才能看到
-    fetchCategories();
-  }, []);
+    // 只有在确认为管理员后才获取分类
+    if (isAdmin) {
+      fetchCategories();
+    }
+  }, [isAdmin]);
 
   const fetchCategories = async () => {
     try {
@@ -165,16 +315,38 @@ export default function CreateResourcePage() {
 
     setLoading(true);
     try {
-      if (!token) {
+      // 尝试从localStorage获取最新的token
+      let authToken = token;
+      
+      try {
+        if (typeof window !== 'undefined') {
+          const authStorage = localStorage.getItem('auth-storage');
+          if (authStorage) {
+            const { state } = JSON.parse(authStorage);
+            if (state?.token) {
+              authToken = state.token;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取localStorage中的token失败:', error);
+      }
+      
+      if (!authToken) {
         toast.error('请先登录');
         return;
       }
+      
+      // 确保token格式正确
+      const formattedToken = authToken?.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+      
+      console.log('发送创建资源请求，token状态:', !!formattedToken);
       
       const response = await fetch('/api/resources', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': formattedToken,
         },
         body: JSON.stringify({
           title: title.trim(),
@@ -182,10 +354,11 @@ export default function CreateResourcePage() {
           coverImageUrl: coverImageUrl.trim() || undefined,
           categoryId,
         }),
+        cache: 'no-cache',
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: `HTTP错误 ${response.status}` }));
         throw new Error(errorData.message || '创建资源失败');
       }
 
@@ -200,7 +373,22 @@ export default function CreateResourcePage() {
     }
   };
 
-  // 移除严格的权限检查，因为创建按钮本身就有权限控制
+  // 如果正在检查权限，显示加载状态
+  if (checkingAuth) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-172px)]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-lg">正在验证权限...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 如果不是管理员，不渲染页面内容（应该已经被重定向）
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-172px)] max-h-[calc(100vh-172px)] overflow-hidden">
@@ -293,6 +481,9 @@ export default function CreateResourcePage() {
                     editable={true}
                     onSave={handleAutoSave}
                   />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    支持上传图片(最大5MB)、视频(最大50MB)、音频(最大20MB)和压缩文件(zip、7z、tar等)
+                  </p>
                 </div>
               </div>
 

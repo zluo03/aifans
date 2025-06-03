@@ -16,6 +16,7 @@ import { NoteCategory } from '@/types';
 import Link from 'next/link';
 import { FileUpload } from '@/components/ui/file-upload';
 import dynamic from 'next/dynamic';
+import { getUploadLimit } from "@/lib/utils/upload-limits";
 
 // 动态导入BlockNote编辑器，禁用SSR
 const BlockNoteEditor = dynamic(
@@ -103,9 +104,20 @@ export default function EditNotePage() {
         return [{ url: '', key: '' }];
       }
 
-      // 验证文件大小 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('图片大小不能超过5MB');
+      // 获取笔记模块的上传限制
+      let maxSizeMB = 5; // 默认值
+      try {
+        const limit = await getUploadLimit('notes');
+        if (limit && limit.imageMaxSizeMB) {
+          maxSizeMB = limit.imageMaxSizeMB;
+        }
+      } catch (limitError) {
+        console.warn('获取上传限制失败，使用默认值', limitError);
+      }
+
+      // 验证文件大小
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        toast.error(`图片大小不能超过${maxSizeMB}MB`);
         return [{ url: '', key: '' }];
       }
 

@@ -30,6 +30,7 @@ import { CreatorsModule } from './creators/creators.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { SocialMediaModule } from './social-media/social-media.module';
 import { MembershipModule } from './membership/membership.module';
+import { PublicModule } from './public/public.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { MembershipModule } from './membership/membership.module';
     AnnouncementsModule,
     SocialMediaModule,
     MembershipModule,
+    PublicModule,
   ],
   controllers: [
     AppController, 
