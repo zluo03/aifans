@@ -87,17 +87,19 @@ function ResourcesContent() {
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuthStore();
   
-  const pageParam = searchParams.get('page');
-  const queryParam = searchParams.get('query');
-  const categoryParam = searchParams.get('category');
-  const favoritedParam = searchParams.get('favorited');
-
   useEffect(() => {
-    setCurrentPage(pageParam ? parseInt(pageParam) : 1);
-    setSearchQuery(queryParam || '');
-    setSelectedCategory(categoryParam || '');
-    setShowFavorited(favoritedParam === 'true');
-  }, [pageParam, queryParam, categoryParam, favoritedParam]);
+    if (searchParams) {
+      const pageParam = searchParams.get('page');
+      const queryParam = searchParams.get('query');
+      const categoryParam = searchParams.get('category');
+      const favoritedParam = searchParams.get('favorited');
+      
+      setCurrentPage(pageParam ? parseInt(pageParam) : 1);
+      setSearchQuery(queryParam || '');
+      setSelectedCategory(categoryParam || '');
+      setShowFavorited(favoritedParam === 'true');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -119,7 +121,17 @@ function ResourcesContent() {
     try {
       setLoading(true);
       
-      if (favorited && user) {
+      // 如果是获取收藏的资源，需要用户登录
+      if (favorited) {
+        if (!user) {
+          console.error('获取收藏资源失败: 用户未登录');
+          toast.error('请先登录后查看收藏');
+          setResources([]);
+          setTotalPages(1);
+          setShowFavorited(false);
+          return;
+        }
+        
         // 获取收藏的资源
         const { token: storeToken } = useAuthStore.getState();
         const localToken = localStorage.getItem('token');
@@ -128,6 +140,9 @@ function ResourcesContent() {
         if (!token) {
           console.error('获取收藏资源失败: 没有认证token');
           toast.error('请先登录');
+          setResources([]);
+          setTotalPages(1);
+          setShowFavorited(false);
           return;
         }
 
@@ -174,7 +189,7 @@ function ResourcesContent() {
         setTotalPages(data.totalPages);
         setCurrentPage(data.page);
       } else {
-        // 获取所有资源
+        // 获取所有资源 - 所有人都可以访问
         console.log('开始获取所有资源，页码:', pageNum, '查询:', query, '分类:', categoryId);
         const params = new URLSearchParams();
         params.set('page', pageNum.toString());
@@ -208,6 +223,8 @@ function ResourcesContent() {
       console.error('获取资源失败:', error);
       const errorMessage = error instanceof Error ? error.message : '获取资源失败';
       toast.error(errorMessage);
+      setResources([]);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -230,9 +247,15 @@ function ResourcesContent() {
   };
 
   const handleToggleFavorited = (checked: boolean) => {
+    // 检查用户是否登录，如果未登录则提示登录
+    if (!user && checked) {
+      toast.error('请先登录');
+      return;
+    }
+    
     setShowFavorited(checked);
     
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('page', '1');
     if (checked) {
       params.set('favorited', 'true');
@@ -243,7 +266,7 @@ function ResourcesContent() {
   };
 
   const handlePageChange = (page: number) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('page', page.toString());
     router.push(`/resources?${params.toString()}`);
   };
@@ -252,7 +275,7 @@ function ResourcesContent() {
     console.log('点击资源卡片，资源ID:', resourceId);
     console.log('当前用户状态:', { user: user ? { id: user.id, role: user.role } : null });
     
-    // 检查用户权限：需要登录且不能是普通用户
+    // 检查用户是否登录
     if (!user) {
       console.log('用户未登录，跳转到登录页面');
       toast.error('请先登录');
@@ -260,13 +283,14 @@ function ResourcesContent() {
       return;
     }
 
+    // 检查用户角色：普通用户显示升级提醒
     if (user.role === 'NORMAL') {
       console.log('普通用户无权限访问资源详情，显示升级弹框');
       setShowMemberDialog(true);
       return;
     }
     
-    // 只有登录的非普通用户可以访问（高级会员、终身会员、管理员）
+    // 只有高级用户、终身会员和管理员可以访问
     console.log('用户有权限访问资源详情，使用客户端路由跳转');
     console.log('用户状态: 已登录 (' + user.role + ')');
     router.push(`/resources/${resourceId}`);
@@ -276,7 +300,7 @@ function ResourcesContent() {
     return new Date(dateString).toLocaleDateString('zh-CN');
   };
 
-  // 检查访问权限：所有登录用户都可以查看资源列表
+  // 检查访问权限：只有登录用户才能查看资源列表
   if (!isAuthenticated) {
     return <GuestAccessDenied />;
   }

@@ -21,6 +21,7 @@ import {
 import { useAuthStore } from '@/lib/store/auth-store';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
+import { processUploadImageUrl } from "@/lib/utils/image-url";
 
 // 动态导入BlockNote查看器，禁用SSR
 const BlockNoteViewer = dynamic(
@@ -64,19 +65,24 @@ interface UserInteractions {
 }
 
 export default function ResourceDetailPage() {
-  const params = useParams();
   const router = useRouter();
-  const { user, isLoading: authLoading, isAuthenticated } = useAuthStore();
+  const params = useParams();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const { token } = useAuthStore();
   const [resource, setResource] = useState<Resource | null>(null);
-  const [interactions, setInteractions] = useState<UserInteractions>({ liked: false, favorited: false });
+  const [interactions, setInteractions] = useState<UserInteractions>({
+    liked: false,
+    favorited: false,
+  });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(false);
 
-  const resourceId = params.id as string;
+  const resourceId = params?.id as string;
 
   useEffect(() => {
     console.log('=== 资源详情页面权限检查 ===');
-    console.log('认证状态:', { authLoading, isAuthenticated, user: user ? { id: user.id, role: user.role } : null });
     
     // 等待认证状态加载完成
     if (authLoading) {
@@ -84,22 +90,17 @@ export default function ResourceDetailPage() {
       return;
     }
 
-    // 检查用户权限：需要登录且不能是普通用户
-    if (!isAuthenticated) {
+    // 检查用户是否登录
+    if (!isAuthenticated || !user) {
       console.log('用户未登录，跳转到登录页面');
       toast.error('请先登录');
       router.push('/login');
       return;
     }
 
-    // 检查用户对象是否存在
-    if (!user) {
-      console.log('用户对象不存在，但认证状态为true，等待用户数据加载...');
-      return;
-    }
-
     console.log('当前用户信息:', { id: user.id, role: user.role, status: user.status });
 
+    // 检查用户角色：普通用户无权访问
     if (user.role === 'NORMAL') {
       console.log('普通用户无权限访问资源详情');
       toast.error('此功能需要升级会员才能使用', {
@@ -114,75 +115,90 @@ export default function ResourceDetailPage() {
       return;
     }
 
-    // 只有登录的非普通用户可以访问（高级会员、终身会员、管理员）
+    // 只有高级用户、终身会员和管理员可以访问
     console.log('用户有权限访问资源详情，开始获取资源数据');
-    console.log('用户状态: 已登录 (' + user.role + ')');
     
+    // 简化管理员检查
+    setIsAdmin(user.role === 'ADMIN');
+    
+    // 获取资源数据
     fetchResource();
     fetchInteractions();
-  }, [resourceId, user, authLoading, isAuthenticated]);
+  }, [resourceId, user, authLoading, isAuthenticated, token]);
+
+  // 定义一个处理API错误的通用函数
+  const handleApiError = async (response: Response, errorMessage: string) => {
+    if (response.status === 401) {
+      console.error('认证失败，尝试刷新用户资料');
+      
+      // 尝试刷新用户资料
+      const refreshSuccess = await useAuthStore.getState().forceRefreshUserProfile();
+      
+      if (refreshSuccess) {
+        // 刷新成功，返回true表示可以重试
+        return true;
+      } else {
+        // 刷新失败，提示用户重新登录
+        console.error('用户资料刷新失败，需要重新登录');
+        toast.error('认证已过期，请重新登录');
+        router.push('/login');
+        return false;
+      }
+    }
+    
+    // 其他错误
+    console.error(`${errorMessage}，状态码:`, response.status);
+    return false;
+  };
 
   const fetchResource = async () => {
     try {
-      // 获取认证token（必需）
-      const { token: storeToken } = useAuthStore.getState();
-      const localToken = localStorage.getItem('token');
-      const token = storeToken || localToken;
+      setLoading(true);
       
-      console.log('开始获取资源详情，资源ID:', resourceId);
-      console.log('Token来源:', storeToken ? 'store' : 'localStorage');
-      
-      if (!token) {
-        console.error('没有找到认证token');
+      // 确保用户已登录且有token
+      if (!user || !token) {
+        console.error('获取资源失败: 用户未登录或无token');
         toast.error('请先登录');
         router.push('/login');
         return;
       }
       
+      // 确保token格式正确
+      const bearerToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+      
+      console.log('发送资源请求，使用token:', bearerToken ? '有效token' : '无效token');
+      
       const response = await fetch(`/api/resources/${resourceId}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': bearerToken,
           'Content-Type': 'application/json',
+          // 添加防缓存头部
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         },
+        credentials: 'include',
+        cache: 'no-store'
       });
       
-      console.log('获取资源详情响应状态:', response.status);
-      
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-          console.error('获取资源失败详情:', errorData);
-        } catch (parseError) {
-          console.error('解析错误响应失败:', parseError);
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
-        }
-        
-        // 根据状态码提供更具体的错误信息
-        let errorMessage = '获取资源失败';
-        if (response.status === 401) {
-          errorMessage = '认证失败，请重新登录';
-          useAuthStore.getState().logout();
-          router.push('/login');
+        // 使用通用错误处理函数
+        const shouldRetry = await handleApiError(response, '获取资源失败');
+        if (shouldRetry) {
+          // 如果需要重试，等待一小段时间后再次尝试
+          setTimeout(() => {
+            fetchResource();
+          }, 500);
           return;
-        } else if (response.status === 403) {
-          errorMessage = '没有权限访问此资源';
-        } else if (response.status === 404) {
-          errorMessage = '资源不存在';
-        } else {
-          errorMessage = errorData.error || errorData.message || `获取资源失败 (${response.status})`;
         }
         
-        throw new Error(errorMessage);
+        throw new Error('获取资源失败');
       }
       
       const data = await response.json();
-      console.log('获取资源详情成功:', { id: data.id, title: data.title });
       setResource(data);
     } catch (error) {
       console.error('获取资源失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '获取资源失败';
-      toast.error(errorMessage);
+      toast.error('获取资源失败，请稍后重试');
       router.push('/resources');
     } finally {
       setLoading(false);
@@ -190,41 +206,25 @@ export default function ResourceDetailPage() {
   };
 
   const fetchInteractions = async () => {
-    if (!user) return;
+    if (!user || !token) return;
     
     try {
-      // 使用与fetchResource相同的token获取逻辑
-      const { token: storeToken } = useAuthStore.getState();
-      const localToken = localStorage.getItem('token');
-      const token = storeToken || localToken;
+      // 确保token格式正确
+      const bearerToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      if (!token) {
-        console.log('没有找到认证token，跳过获取交互状态');
-        return;
-      }
-
-      console.log('开始获取交互状态，资源ID:', resourceId);
-      console.log('Token来源:', storeToken ? 'store' : 'localStorage');
-
       const response = await fetch(`/api/resources/${resourceId}/interactions`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': bearerToken,
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
         },
+        credentials: 'include',
+        cache: 'no-store'
       });
-      
-      console.log('获取交互状态响应状态:', response.status);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('获取交互状态成功:', data);
         setInteractions(data);
-      } else if (response.status === 401) {
-        console.log('认证失败，可能token已过期');
-        useAuthStore.getState().logout();
-        // 不显示错误，静默处理
-      } else {
-        console.error('获取交互状态失败，状态码:', response.status);
       }
     } catch (error) {
       console.error('获取交互状态失败:', error);
@@ -232,65 +232,31 @@ export default function ResourceDetailPage() {
   };
 
   const handleLike = async () => {
-    if (!user) {
+    if (!user || !token) {
       toast.error('请先登录');
       return;
     }
 
     setActionLoading(true);
     try {
-      // 使用store中的token，而不是localStorage
-      const { token: storeToken } = useAuthStore.getState();
-      const localToken = localStorage.getItem('token');
-      const token = storeToken || localToken;
+      // 确保token格式正确
+      const bearerToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      if (!token) {
-        toast.error('请先登录');
-        return;
-      }
-
-      console.log('开始点赞操作，资源ID:', resourceId);
-      console.log('用户信息:', { id: user.id, role: user.role });
-      console.log('Token来源:', storeToken ? 'store' : 'localStorage');
-
       const response = await fetch(`/api/resources/${resourceId}/like`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': bearerToken,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
+        cache: 'no-store'
       });
 
-      console.log('点赞响应状态:', response.status);
-
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-          console.error('点赞失败详情:', errorData);
-        } catch (parseError) {
-          console.error('解析错误响应失败:', parseError);
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
-        }
-
-        // 根据状态码提供更具体的错误信息
-        let errorMessage = '点赞失败';
-        if (response.status === 401) {
-          errorMessage = '认证失败，请重新登录';
-          useAuthStore.getState().logout();
-        } else if (response.status === 403) {
-          errorMessage = '没有权限进行此操作';
-        } else if (response.status === 404) {
-          errorMessage = '资源不存在';
-        } else {
-          errorMessage = errorData.error || errorData.message || `点赞失败 (${response.status})`;
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error('点赞失败');
       }
 
       const data = await response.json();
-      console.log('点赞成功结果:', data);
       setInteractions(prev => ({ ...prev, liked: data.liked }));
       setResource(prev => prev ? {
         ...prev,
@@ -300,73 +266,38 @@ export default function ResourceDetailPage() {
       toast.success(data.liked ? '点赞成功' : '取消点赞');
     } catch (error) {
       console.error('点赞操作失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '点赞失败';
-      toast.error(errorMessage);
+      toast.error('点赞失败，请稍后重试');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleFavorite = async () => {
-    if (!user) {
+    if (!user || !token) {
       toast.error('请先登录');
       return;
     }
 
     setActionLoading(true);
     try {
-      // 使用store中的token，而不是localStorage
-      const { token: storeToken } = useAuthStore.getState();
-      const localToken = localStorage.getItem('token');
-      const token = storeToken || localToken;
+      // 确保token格式正确
+      const bearerToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      if (!token) {
-        toast.error('请先登录');
-        return;
-      }
-
-      console.log('开始收藏操作，资源ID:', resourceId);
-      console.log('用户信息:', { id: user.id, role: user.role });
-      console.log('Token来源:', storeToken ? 'store' : 'localStorage');
-
       const response = await fetch(`/api/resources/${resourceId}/favorite`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': bearerToken,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
+        cache: 'no-store'
       });
 
-      console.log('收藏响应状态:', response.status);
-
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-          console.error('收藏失败详情:', errorData);
-        } catch (parseError) {
-          console.error('解析错误响应失败:', parseError);
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
-        }
-
-        // 根据状态码提供更具体的错误信息
-        let errorMessage = '收藏失败';
-        if (response.status === 401) {
-          errorMessage = '认证失败，请重新登录';
-          useAuthStore.getState().logout();
-        } else if (response.status === 403) {
-          errorMessage = '没有权限进行此操作';
-        } else if (response.status === 404) {
-          errorMessage = '资源不存在';
-        } else {
-          errorMessage = errorData.error || errorData.message || `收藏失败 (${response.status})`;
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error('收藏失败');
       }
 
       const data = await response.json();
-      console.log('收藏成功结果:', data);
       setInteractions(prev => ({ ...prev, favorited: data.favorited }));
       setResource(prev => prev ? {
         ...prev,
@@ -376,8 +307,7 @@ export default function ResourceDetailPage() {
       toast.success(data.favorited ? '收藏成功' : '取消收藏');
     } catch (error) {
       console.error('收藏操作失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '收藏失败';
-      toast.error(errorMessage);
+      toast.error('收藏失败，请稍后重试');
     } finally {
       setActionLoading(false);
     }
@@ -402,72 +332,35 @@ export default function ResourceDetailPage() {
     }
 
     // 检查用户权限
-    if (!user || user.role !== 'ADMIN') {
+    if (!user || !token || user.role !== 'ADMIN') {
       toast.error('只有管理员可以删除资源');
       return;
     }
 
     setActionLoading(true);
     try {
-      // 使用store中的token，而不是localStorage
-      const { token: storeToken } = useAuthStore.getState();
-      const localToken = localStorage.getItem('token');
-      const token = storeToken || localToken;
+      // 确保token格式正确
+      const bearerToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      if (!token) {
-        toast.error('请先登录');
-        return;
-      }
-
-      console.log('开始删除资源，ID:', resourceId);
-      console.log('用户信息:', { id: user.id, role: user.role });
-      console.log('Token来源:', storeToken ? 'store' : 'localStorage');
-
       const response = await fetch(`/api/resources/${resourceId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': bearerToken,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
+        cache: 'no-store'
       });
 
-      console.log('删除响应状态:', response.status);
-
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-          console.error('删除失败详情:', errorData);
-        } catch (parseError) {
-          console.error('解析错误响应失败:', parseError);
-          errorData = { error: '服务器响应错误', details: `HTTP ${response.status}` };
-        }
-
-        // 根据状态码提供更具体的错误信息
-        let errorMessage = '删除失败';
-        if (response.status === 401) {
-          errorMessage = '认证失败，请重新登录';
-          // 如果是认证失败，清除认证状态
-          useAuthStore.getState().logout();
-        } else if (response.status === 403) {
-          errorMessage = '没有权限删除此资源';
-        } else if (response.status === 404) {
-          errorMessage = '资源不存在';
-        } else {
-          errorMessage = errorData.error || errorData.message || `删除失败 (${response.status})`;
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error('删除失败');
       }
 
-      const data = await response.json();
-      console.log('删除成功结果:', data);
       toast.success('资源删除成功');
       router.push('/resources');
     } catch (error) {
       console.error('删除资源失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '删除失败';
-      toast.error(`删除失败: ${errorMessage}`);
+      toast.error('删除失败，请稍后重试');
     } finally {
       setActionLoading(false);
     }
@@ -528,11 +421,11 @@ export default function ResourceDetailPage() {
       <Card>
         {/* 封面图片 */}
         {resource.coverImageUrl && (
-          <div className="aspect-[3/1] relative overflow-hidden rounded-t-lg">
+          <div className="mb-6">
             <img
-              src={resource.coverImageUrl}
+              src={processUploadImageUrl(resource.coverImageUrl)}
               alt={resource.title}
-              className="w-full h-full object-cover"
+              className="w-full h-64 object-cover rounded-lg shadow-md"
             />
           </div>
         )}
@@ -610,13 +503,13 @@ export default function ResourceDetailPage() {
               </Button>
 
               {/* 管理员操作按钮 */}
-              {user && user.role === 'ADMIN' && (
+              {isAdmin && (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleEdit}
-                    disabled={actionLoading}
+                    disabled={actionLoading || checkingAdmin}
                   >
                     <Edit className="w-4 h-4 mr-1" />
                     编辑
@@ -626,7 +519,7 @@ export default function ResourceDetailPage() {
                     variant="destructive"
                     size="sm"
                     onClick={handleDelete}
-                    disabled={actionLoading}
+                    disabled={actionLoading || checkingAdmin}
                   >
                     <Trash2 className="w-4 h-4 mr-1" />
                     删除
