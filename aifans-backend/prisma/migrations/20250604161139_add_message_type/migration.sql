@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `user_messages` ADD COLUMN `type` VARCHAR(191) NOT NULL DEFAULT 'NORMAL';
